@@ -12,9 +12,6 @@ npm run dev
 
 Then open http://localhost:4321.
 
-Every `.csv` (and `.xlsx`) in `data/` is read on page load. To keep the exports somewhere else
-— a synced Google Drive folder, say — copy `.env.example` to `.env` and set `POKEMON_DATA_DIR`.
-
 ## Snapshots
 
 Each export is one observation of the whole portfolio, so **put the date in the file name**:

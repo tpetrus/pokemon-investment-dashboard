@@ -1,0 +1,154 @@
+---
+export const prerender = false;
+
+import '@fontsource-variable/inter';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Access Pokémon Dashboard</title>
+    <meta name="description" content="Enter your password to access the Pokémon investment dashboard." />
+    <style>
+      .login-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .login-card {
+        width: 100%;
+        max-width: 380px;
+      }
+
+      .login-card h1 {
+        text-align: center;
+        margin-bottom: 8px;
+      }
+
+      .login-card p {
+        text-align: center;
+        color: var(--ink-2);
+        margin-bottom: 32px;
+        font-size: var(--step--1);
+      }
+
+      .login-form {
+        display: grid;
+        gap: 20px;
+      }
+
+      .error-message {
+        display: none;
+        padding: 12px 15px;
+        border-radius: var(--r-md);
+        background: rgba(171, 42, 32, 0.08);
+        color: var(--down);
+        font-size: var(--step--1);
+        font-weight: 500;
+      }
+
+      .error-message.show {
+        display: block;
+      }
+
+      input[type='password'] {
+        font: 400 var(--step-0) / 1.4 var(--body);
+        color: var(--ink);
+        background: var(--surface);
+        border: 0;
+        border-radius: var(--r-md);
+        box-shadow: var(--press-sm);
+        padding: 12px 15px;
+        min-height: 46px;
+        width: 100%;
+        appearance: none;
+      }
+
+      input[type='password']::placeholder {
+        color: var(--ink-3);
+      }
+
+      .btn-submit {
+        font: 600 var(--step-0) / 1 var(--body);
+        color: var(--accent);
+        background: var(--surface);
+        border: var(--rim);
+        border-radius: var(--r-md);
+        box-shadow: var(--lift-sm);
+        padding: 13px 18px;
+        min-height: 46px;
+        cursor: pointer;
+        transition: box-shadow 140ms ease, transform 140ms ease;
+        width: 100%;
+      }
+
+      .btn-submit:hover {
+        box-shadow: var(--lift);
+      }
+
+      .btn-submit:active {
+        box-shadow: var(--press-sm);
+        transform: translateY(1px);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-container">
+      <div class="card login-card">
+        <h1>Pokémon Dashboard</h1>
+        <p>Enter your access password</p>
+        <form class="login-form" id="loginForm">
+          <div class="error-message" id="errorMessage"></div>
+          <div class="field">
+            <input
+              type="password"
+              id="password"
+              placeholder="Password"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+          <button type="submit" class="btn-submit">Access Dashboard</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('loginForm');
+      const passwordInput = document.getElementById('password');
+      const errorMessage = document.getElementById('errorMessage');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = passwordInput.value;
+
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          window.location.href = '/';
+        } else {
+          errorMessage.textContent = data.error || 'Incorrect password. Please try again.';
+          errorMessage.classList.add('show');
+          passwordInput.value = '';
+          passwordInput.focus();
+        }
+      });
+    </script>
+  </body>
+</html>

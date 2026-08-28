@@ -13,12 +13,6 @@ npm run dev
 
 Then open http://localhost:4321.
 
-To preview with the included sample workbook instead of your real folder, copy `.env.example`
-to `.env` and set `POKEMON_DATA_DIR=./data`.
-
-If Google Drive for desktop mounts as a drive letter on your machine (`G:\My Drive\...`), put
-that path in `.env` instead. The default path is used when no `.env` exists.
-
 ## How it reads your sheets
 
 Your column names are not assumed. On load, every `.xlsx`, `.xlsm`, `.xls` and `.csv` in the
