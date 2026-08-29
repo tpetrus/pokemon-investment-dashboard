@@ -8,9 +8,11 @@ import '@fontsource/space-grotesk/700.css';
 import '../styles/global.css';
 import Dashboard from '../components/Dashboard.jsx';
 import { loadWorkbooks } from '../lib/loadWorkbooks.js';
+import { env } from 'cloudflare:workers';
 
-// Runs in Node, so it reads the spreadsheets straight off disk — no upload step.
-const { sheets, dir, error } = loadWorkbooks();
+// Load spreadsheets from R2 storage
+const bucket = env.POKEMON_DATA;
+const { sheets, dir, error } = await loadWorkbooks(bucket);
 ---
 
 <!doctype html>

@@ -1,10 +1,13 @@
 # Pokémon investments dashboard
 
-Astro + React dashboard for your sealed portfolio. It reads the spreadsheets in
-`C:\Users\trevo\Google Drive\Pokemon Investments` directly off disk — no upload, no copy step.
-Edit a sheet, save it, refresh the page.
+Astro + React dashboard for your sealed portfolio. It reads your spreadsheets from
+Cloudflare R2 storage, loading the most recent file automatically.
 
 ## Run it
+
+**Prerequisites:**
+- R2 buckets created and configured (see R2 Setup below)
+- At least one spreadsheet uploaded to your R2 bucket
 
 ```bash
 npm install
@@ -13,12 +16,51 @@ npm run dev
 
 Then open http://localhost:4321.
 
+## R2 Setup
+
+### Create R2 buckets
+
+Create two R2 buckets in the Cloudflare dashboard:
+- `pokemon-data-dev` — for local development
+- `pokemon-data-prod` — for production
+
+Navigate to **R2** in your Cloudflare dashboard, click **Create bucket**, and create each bucket.
+
+### Configure bindings
+
+The R2 bindings are already configured in `wrangler.jsonc`. The dev environment uses
+`pokemon-data-dev`, and production uses `pokemon-data-prod`.
+
+### Upload files
+
+Upload your spreadsheets to the appropriate bucket via the Cloudflare dashboard or wrangler CLI.
+
+**Via Cloudflare dashboard:**
+1. Navigate to your bucket
+2. Click **Upload**
+3. Select your spreadsheet file
+
+**Via wrangler CLI:**
+```bash
+wrangler r2 object put pokemon-data-dev/Portfolio-2026-08-28.xlsx --file=./Portfolio-2026-08-28.xlsx
+```
+
+### File naming
+
+Use date-based naming (e.g., `Portfolio-YYYY-MM-DD.xlsx`) to keep files organized. The app
+automatically loads the most recent file in the bucket based on the last modified timestamp.
+
+### Local development
+
+When running `npm run dev`, the app connects to the `pokemon-data-dev` bucket. Upload test
+files there to avoid affecting your production data.
+
 ## How it reads your sheets
 
-Your column names are not assumed. On load, every `.xlsx`, `.xlsm`, `.xls` and `.csv` in the
-folder is parsed, the header row is detected (title rows and blank rows above it are skipped),
-and headers are matched to fields by synonym — `Price Paid`, `Cost Each` and `Purchase Price`
-all resolve to cost per unit, and so on.
+Your column names are not assumed. On load, the most recent file in the R2 bucket is fetched
+and parsed. The header row is detected (title rows and blank rows above it are skipped), and
+headers are matched to fields by synonym — `Price Paid`, `Cost Each` and `Purchase Price` all
+resolve to cost per unit, and so on.
 
 Anything guessed wrong is fixable in the **Data** tab, where every field has a dropdown of your
 actual column names. Corrections are saved in the browser, so they stick between sessions.
@@ -70,7 +112,7 @@ numerals so columns align. Reduced motion and print are both handled.
 ## Files
 
 ```
-src/lib/loadWorkbooks.js   reads and parses the folder (Node)
+src/lib/loadWorkbooks.js   fetches and parses from R2
 src/lib/normalize.js       synonym mapping, type coercion, P/L math, data audit
 src/components/            Dashboard, charts, table, exit calculator, data panel
 src/styles/global.css      the design system

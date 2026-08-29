@@ -1,0 +1,9 @@
+# Local development environment variables for Cloudflare Workers
+# Copy this file to .dev.vars and fill in your actual values
+# .dev.vars is gitignored and should never be committed
+
+# Application password for authentication
+APP_PASSWORD=your_password_here
+
+# Note: R2 bucket binding (POKEMON_DATA) is configured in wrangler.jsonc
+# Local dev will use the pokemon-data-dev bucket automatically

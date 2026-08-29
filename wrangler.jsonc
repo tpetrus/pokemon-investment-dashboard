@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pokemon-investment-dashboard",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Default environment (dev/preview)
+  "r2_buckets": [
+    {
+      "binding": "POKEMON_DATA",
+      "bucket_name": "pokemon-data-dev"
+    }
+  ],
+  // Production environment
+  "env": {
+    "production": {
+      "r2_buckets": [
+        {
+          "binding": "POKEMON_DATA",
+          "bucket_name": "pokemon-data-prod"
+        }
+      ]
+    }
+  }
+}

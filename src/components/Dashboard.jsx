@@ -4,7 +4,6 @@ import { AllocationDonut, CostVsValueBars, CapitalDeployed, HoldVsReturn, Vendor
 import HoldingsTable from './HoldingsTable.jsx';
 import ExitCalculator from './ExitCalculator.jsx';
 import DataPanel from './DataPanel.jsx';
-import FileDrop from './FileDrop.jsx';
 import { guessMapping, normalizeRows, computeMetrics, groupBy, auditRows, snapshotDateFrom } from '../lib/normalize.js';
 import { money, signedMoney, pct, count, plainPct, duration, tone, shortDate } from '../lib/format.js';
 
@@ -20,13 +19,12 @@ const TABS = [
 ];
 
 export default function Dashboard({ initialSheets = [], dir = '', loadError = null }) {
-  const [uploaded, setUploaded] = useState([]);
   const [tab, setTab] = useState('overview');
   const [enabled, setEnabled] = useState({});
   const [overrides, setOverrides] = useState({});
   const [hydrated, setHydrated] = useState(false);
 
-  const sheets = useMemo(() => [...initialSheets, ...uploaded], [initialSheets, uploaded]);
+  const sheets = initialSheets;
 
   useEffect(() => {
     try {
@@ -129,7 +127,6 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
         <div className="stack" style={{ marginBottom: 26 }}>
           <Card title="No spreadsheets loaded">
             <p style={{ color: 'var(--ink-2)' }}>{loadError}</p>
-            <FileDrop onSheets={(s) => setUploaded((u) => [...u, ...s])} />
           </Card>
         </div>
       )}
@@ -333,9 +330,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
               onMap={setMap}
               audit={audit}
               onReset={resetMaps}
-            >
-              <FileDrop onSheets={(s) => setUploaded((u) => [...u, ...s])} />
-            </DataPanel>
+            />
           )}
         </>
       )}

@@ -1,8 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import * as XLSX from 'xlsx';
-
-export const DEFAULT_DATA_DIR = 'C:\\Users\\trevo\\Google Drive\\Pokemon Investments';
 
 const EXTS = new Set(['.xlsx', '.xlsm', '.xls', '.csv']);
 
@@ -52,55 +48,99 @@ function sheetToRows(sheet) {
   return { headers, rows };
 }
 
-export function loadWorkbooks(dir = process.env.POKEMON_DATA_DIR || DEFAULT_DATA_DIR) {
-  const result = { dir, sheets: [], error: null };
+/**
+ * Load workbooks from Cloudflare R2 storage.
+ * 
+ * @param {import('@cloudflare/workers-types').R2Bucket} bucket - The R2 bucket binding
+ * @returns {Promise<{dir: string, sheets: Array, error: string|null}>}
+ */
+export async function loadWorkbooks(bucket) {
+  const result = { dir: 'R2 storage', sheets: [], error: null };
 
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch (err) {
-    result.error =
-      err.code === 'ENOENT'
-        ? `No folder at ${dir}. Set POKEMON_DATA_DIR in .env to the folder holding your spreadsheets, or drop files onto the dashboard.`
-        : `Could not read ${dir}: ${err.message}`;
+  // Check if bucket binding exists
+  if (!bucket) {
+    result.error = 'R2 storage not configured. Check your wrangler.jsonc configuration.';
     return result;
   }
 
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (entry.name.startsWith('~$') || entry.name.startsWith('.')) continue;
-    if (!EXTS.has(path.extname(entry.name).toLowerCase())) continue;
+  // List all objects in the bucket
+  let listResult;
+  try {
+    listResult = await bucket.list();
+  } catch (err) {
+    result.error = `Could not read from R2 storage: ${err.message}`;
+    return result;
+  }
 
-    const full = path.join(dir, entry.name);
-    try {
-      // XLSX.readFile relies on the Node-only fs shim, which the bundler strips.
-      // Reading the bytes ourselves keeps this working in dev and in a built server.
-      // CSVs must go in as a decoded string — handed raw bytes, the parser assumes a
-      // legacy codepage and turns apostrophes in names like "Team Rocket's" into mojibake.
-      const isCsv = path.extname(entry.name).toLowerCase() === '.csv';
-      const wb = isCsv
-        ? XLSX.read(fs.readFileSync(full, 'utf8').replace(/^\uFEFF/, ''), { type: 'string', cellDates: true })
-        : XLSX.read(fs.readFileSync(full), { type: 'buffer', cellDates: true });
-      const stat = fs.statSync(full);
-      for (const sheetName of wb.SheetNames) {
-        const { headers, rows } = sheetToRows(wb.Sheets[sheetName]);
-        if (!rows.length) continue;
-        result.sheets.push({
-          id: `${entry.name}::${sheetName}`,
-          file: entry.name,
-          sheet: sheetName,
-          modified: stat.mtime.toISOString(),
-          headers,
-          rows,
-        });
-      }
-    } catch (err) {
-      result.sheets.push({ id: entry.name, file: entry.name, sheet: null, headers: [], rows: [], readError: err.message });
+  // Filter by supported extensions and sort by key (filename) descending
+  const validFiles = listResult.objects
+    .filter((obj) => {
+      const key = obj.key.toLowerCase();
+      return EXTS.has(key.slice(key.lastIndexOf('.')));
+    })
+    .sort((a, b) => b.key.localeCompare(a.key)); // Sort descending to get most recent first
+
+  if (validFiles.length === 0) {
+    result.error = 'No spreadsheets found in R2 bucket. Upload .xlsx or .csv files to get started.';
+    return result;
+  }
+
+  // Take only the most recent file
+  const mostRecent = validFiles[0];
+  const key = mostRecent.key;
+
+  try {
+    // Fetch the file from R2
+    const r2Object = await bucket.get(key);
+    
+    if (!r2Object) {
+      result.error = `Could not read from R2 storage: File ${key} not found`;
+      return result;
     }
+
+    // Get file contents as ArrayBuffer
+    const arrayBuffer = await r2Object.arrayBuffer();
+    
+    // Determine if it's a CSV based on extension
+    const isCsv = key.toLowerCase().endsWith('.csv');
+    
+    // Parse the file with XLSX
+    // CSVs must go in as a decoded string — handed raw bytes, the parser assumes a
+    // legacy codepage and turns apostrophes in names like "Team Rocket's" into mojibake.
+    const wb = isCsv
+      ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer).replace(/^\uFEFF/, ''), { type: 'string', cellDates: true })
+      : XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+    
+    // Get the uploaded timestamp from R2 metadata
+    const modified = r2Object.uploaded.toISOString();
+    
+    // Process each sheet in the workbook
+    for (const sheetName of wb.SheetNames) {
+      const { headers, rows } = sheetToRows(wb.Sheets[sheetName]);
+      if (!rows.length) continue;
+      result.sheets.push({
+        id: `${key}::${sheetName}`,
+        file: key,
+        sheet: sheetName,
+        modified,
+        headers,
+        rows,
+      });
+    }
+  } catch (err) {
+    result.sheets.push({ 
+      id: key, 
+      file: key, 
+      sheet: null, 
+      headers: [], 
+      rows: [], 
+      readError: err.message 
+    });
   }
 
   if (!result.error && !result.sheets.length) {
-    result.error = `Found ${dir}, but no readable .xlsx/.xls/.csv files inside it.`;
+    result.error = `Found file ${mostRecent.key}, but no readable sheets inside it.`;
   }
+  
   return result;
 }
