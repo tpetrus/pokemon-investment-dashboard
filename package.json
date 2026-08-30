@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler pages dev --compatibility-date=2026-08-28 -- astro dev",
+    "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
-    "preview": "wrangler pages dev dist"
+    "preview": "astro build && wrangler dev"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.5",
