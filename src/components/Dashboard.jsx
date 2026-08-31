@@ -123,7 +123,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
         </div>
       </header>
 
-      {loadError && !hasData && (
+      {loadError && !sheets.length && (
         <div className="stack" style={{ marginBottom: 26 }}>
           <Card title="No spreadsheets loaded">
             <p style={{ color: 'var(--ink-2)' }}>{loadError}</p>
@@ -131,11 +131,21 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
         </div>
       )}
 
-      {hasData && (
+      {sheets.length > 0 && (
         <>
           <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-          {tab === 'overview' && (
+          {/* Every sheet excluded, or nothing mapped yet — every tab but Data
+              depends on holdings, so send the user back there rather than
+              showing them nothing with no way out. */}
+          {!hasData && tab !== 'data' && (
+            <Empty title="Nothing to show">
+              Every sheet is excluded, or no rows have a cost or value mapped yet.
+              Head to the Data tab to include a sheet or fix its column mapping.
+            </Empty>
+          )}
+
+          {hasData && tab === 'overview' && (
             <div className="stack">
               <div className="grid grid--kpi">
                 <Kpi
@@ -207,7 +217,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
             </div>
           )}
 
-          {tab === 'allocation' && (
+          {hasData && tab === 'allocation' && (
             <div className="stack">
               <div className="grid grid--2">
                 <Card title="Where the value sits" note="By set">
@@ -253,7 +263,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
             </div>
           )}
 
-          {tab === 'performance' && (
+          {hasData && tab === 'performance' && (
             <div className="stack">
               <div className="grid grid--2">
                 <Card title="Strongest positions" note={m.materialFloor ? `Cost basis over ${money(m.materialFloor)}` : 'Return on cost'}>
@@ -315,13 +325,13 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
             </div>
           )}
 
-          {tab === 'positions' && (
+          {hasData && tab === 'positions' && (
             <Card title="Every position" note={`${count(holdings.length)} rows loaded`}>
               <HoldingsTable holdings={holdings} />
             </Card>
           )}
 
-          {tab === 'exit' && <ExitCalculator holdings={holdings} />}
+          {hasData && tab === 'exit' && <ExitCalculator holdings={holdings} />}
 
           {tab === 'data' && (
             <DataPanel
