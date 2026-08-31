@@ -218,8 +218,9 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                 </Card>
               </div>
               <Card title="Sets ranked" note="Held positions only">
+                <p className="table-hint" style={{ marginBottom: 12 }}>Swipe sideways for the rest of the columns.</p>
                 <div className="table-scroll">
-                  <table>
+                  <table className="table--sticky">
                     <thead>
                       <tr>
                         <th>Set</th>
@@ -275,8 +276,9 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
 
               {m.sold.length > 0 && (
                 <Card title="Closed positions">
+                  <p className="table-hint" style={{ marginBottom: 12 }}>Swipe sideways for the rest of the columns.</p>
                   <div className="table-scroll">
-                    <table>
+                    <table className="table--sticky">
                       <thead>
                         <tr>
                           <th>Product</th>

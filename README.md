@@ -109,10 +109,24 @@ at 13.4:1 and secondary text at 6.6:1 against the surface, focus rings are solid
 rather than soft shadows, controls are at least 44px tall, and every figure is set in tabular
 numerals so columns align. Reduced motion and print are both handled.
 
+## Mobile
+
+The dashboard is built to be read on a phone, and every view has to hold up at 320px wide.
+Grids collapse to a single column, the tab strip becomes a swipeable rail, wide tables scroll
+sideways with the product column pinned in place, the positions table drops to six essential
+columns with a toggle for the rest, and charts shrink their axes and shorten their labels rather
+than just their type. Touch targets clear 44px, hover-only affordances have a tap equivalent,
+inputs stay at 16px so iOS does not zoom on focus, and page padding respects the notch.
+
+If you are adding a feature, the rules and the checks that keep this working are in
+[CLAUDE.md](CLAUDE.md) — the short version is that nothing may widen the document, and
+`min-width: 0` belongs on the children of every new grid or flex container.
+
 ## Files
 
 ```
 src/lib/loadWorkbooks.js   fetches and parses from R2
+src/lib/useMediaQuery.js   JS-side breakpoints, kept in step with global.css
 src/lib/normalize.js       synonym mapping, type coercion, P/L math, data audit
 src/components/            Dashboard, charts, table, exit calculator, data panel
 src/styles/global.css      the design system

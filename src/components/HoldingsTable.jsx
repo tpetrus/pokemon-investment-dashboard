@@ -1,16 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { money, pct, count, shortDate, duration, tone } from '../lib/format.js';
+import { useIsTablet } from '../lib/useMediaQuery.js';
 
+/**
+ * `essential` marks the columns that survive on a phone. Twelve columns in a
+ * 360px viewport means either a horizontal scroll long enough to lose your place
+ * or type too small to read, so narrow screens get the six that answer "what do
+ * I own, what did it cost, what is it worth now" and a toggle for the rest.
+ */
 const COLUMNS = [
-  { key: 'name', label: 'Product', align: 'left' },
+  { key: 'name', label: 'Product', align: 'left', essential: true },
   { key: 'set', label: 'Set', align: 'left' },
-  { key: 'qty', label: 'Qty', align: 'right', fmt: count },
+  { key: 'qty', label: 'Qty', align: 'right', fmt: count, essential: true },
   { key: 'unitCost', label: 'Cost / unit', align: 'right', fmt: (v) => money(v, true) },
-  { key: 'totalCost', label: 'Cost basis', align: 'right', fmt: (v) => money(v) },
+  { key: 'totalCost', label: 'Cost basis', align: 'right', fmt: (v) => money(v), essential: true },
   { key: 'unitValue', label: 'Market / unit', align: 'right', fmt: (v) => money(v, true) },
-  { key: 'totalValue', label: 'Market value', align: 'right', fmt: (v) => money(v) },
-  { key: 'gain', label: 'Unrealized', align: 'right', fmt: (v) => money(v), toned: true },
-  { key: 'roi', label: 'Return', align: 'right', fmt: (v) => pct(v), toned: true },
+  { key: 'totalValue', label: 'Market value', align: 'right', fmt: (v) => money(v), essential: true },
+  { key: 'gain', label: 'Unrealized', align: 'right', fmt: (v) => money(v), toned: true, essential: true },
+  { key: 'roi', label: 'Return', align: 'right', fmt: (v) => pct(v), toned: true, essential: true },
   { key: 'annualized', label: 'Annualized', align: 'right', fmt: (v) => pct(v), toned: true },
   { key: 'heldDays', label: 'Held', align: 'right', fmt: duration },
   { key: 'purchaseDate', label: 'Bought', align: 'right', fmt: shortDate },
@@ -22,6 +29,10 @@ export default function HoldingsTable({ holdings }) {
   const [setFilter, setSetFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('held');
+  const [allColumns, setAllColumns] = useState(false);
+
+  const compact = useIsTablet() && !allColumns;
+  const columns = compact ? COLUMNS.filter((c) => c.essential) : COLUMNS;
 
   const sets = useMemo(() => [...new Set(holdings.map((h) => h.set))].sort(), [holdings]);
   const types = useMemo(() => [...new Set(holdings.map((h) => h.productType))].sort(), [holdings]);
@@ -50,8 +61,20 @@ export default function HoldingsTable({ holdings }) {
   const totals = rows.reduce((a, r) => ({ cost: a.cost + (r.totalCost || 0), value: a.value + (r.totalValue || 0), qty: a.qty + (r.qty || 0) }), { cost: 0, value: 0, qty: 0 });
   const totalRoi = totals.cost > 0 ? (totals.value - totals.cost) / totals.cost : null;
 
+  // Keyed by column so the footer follows whichever columns are on screen.
+  const footer = {
+    name: { text: `${rows.length} rows shown`, cls: '' },
+    qty: { text: count(totals.qty), cls: 'td-right num' },
+    totalCost: { text: money(totals.cost), cls: 'td-right num' },
+    totalValue: { text: money(totals.value), cls: 'td-right num' },
+    gain: { text: money(totals.value - totals.cost), cls: `td-right num ${tone(totals.value - totals.cost)}` },
+    roi: { text: pct(totalRoi), cls: `td-right num ${tone(totalRoi)}` },
+  };
+
   const toggle = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
 
+  // Export is always the full column set — hiding columns is a screen-size
+  // concession, not a change to the data.
   const exportCsv = () => {
     const head = COLUMNS.map((c) => c.label).join(',');
     const body = rows
@@ -74,7 +97,18 @@ export default function HoldingsTable({ holdings }) {
       <div className="filters">
         <div className="field filters__search">
           <label htmlFor="tbl-search">Search</label>
-          <input id="tbl-search" type="search" placeholder="Product, set, vendor, notes" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input
+            id="tbl-search"
+            type="search"
+            placeholder="Product, set, vendor, notes"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
+            enterKeyHint="search"
+          />
         </div>
         <div className="field">
           <label htmlFor="tbl-status">Status</label>
@@ -101,12 +135,19 @@ export default function HoldingsTable({ holdings }) {
         <button className="btn btn--sm" onClick={exportCsv}>Export CSV</button>
       </div>
 
+      <div className="table-hint">
+        <span>Swipe the table sideways — the product column stays put.</span>
+        <button className="btn btn--sm" aria-pressed={allColumns} onClick={() => setAllColumns((v) => !v)}>
+          {allColumns ? `Showing all ${COLUMNS.length} columns` : 'Show all columns'}
+        </button>
+      </div>
+
       <div className="table-scroll">
-        <table>
+        <table className="table--sticky">
           <caption className="sr-only">Positions, sortable by any column</caption>
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <th key={c.key} className={c.align === 'right' ? 'th-right' : ''} aria-sort={sort.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button onClick={() => toggle(c.key)}>
                     {c.label}
@@ -121,14 +162,22 @@ export default function HoldingsTable({ holdings }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                {COLUMNS.map((c) => {
+                {columns.map((c) => {
                   const v = r[c.key];
                   const cls = [c.align === 'right' ? 'td-right num' : '', c.toned ? tone(v) : ''].filter(Boolean).join(' ');
                   return (
                     <td key={c.key} className={cls}>
                       {c.fmt ? c.fmt(v) : v}
-                      {c.key === 'name' && (r.productType !== 'Unassigned' || r.vendor) && (
-                        <span className="cell-sub">{[r.productType !== 'Unassigned' ? r.productType : null, r.vendor].filter(Boolean).join(' · ')}</span>
+                      {/* In compact mode the set column is gone, so it joins the
+                          subtitle rather than disappearing from the row. */}
+                      {c.key === 'name' && (r.productType !== 'Unassigned' || r.vendor || compact) && (
+                        <span className="cell-sub">
+                          {[
+                            compact && r.set !== 'Unassigned' ? r.set : null,
+                            r.productType !== 'Unassigned' ? r.productType : null,
+                            r.vendor,
+                          ].filter(Boolean).join(' · ')}
+                        </span>
                       )}
                     </td>
                   );
@@ -136,7 +185,7 @@ export default function HoldingsTable({ holdings }) {
               </tr>
             ))}
             {!rows.length && (
-              <tr><td colSpan={COLUMNS.length} style={{ textAlign: 'center', color: 'var(--ink-2)', padding: 34 }}>
+              <tr><td colSpan={columns.length} style={{ textAlign: 'center', color: 'var(--ink-2)', padding: 34 }}>
                 No positions match these filters. Clear the search or switch status to Everything.
               </td></tr>
             )}
@@ -144,15 +193,10 @@ export default function HoldingsTable({ holdings }) {
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={2} style={{ fontWeight: 600 }}>{rows.length} rows shown</td>
-                <td className="td-right num" style={{ fontWeight: 600 }}>{count(totals.qty)}</td>
-                <td />
-                <td className="td-right num" style={{ fontWeight: 600 }}>{money(totals.cost)}</td>
-                <td />
-                <td className="td-right num" style={{ fontWeight: 600 }}>{money(totals.value)}</td>
-                <td className={`td-right num ${tone(totals.value - totals.cost)}`} style={{ fontWeight: 600 }}>{money(totals.value - totals.cost)}</td>
-                <td className={`td-right num ${tone(totalRoi)}`} style={{ fontWeight: 600 }}>{pct(totalRoi)}</td>
-                <td colSpan={3} />
+                {columns.map((c) => {
+                  const f = footer[c.key];
+                  return <td key={c.key} className={f?.cls} style={{ fontWeight: 600 }}>{f?.text ?? ''}</td>;
+                })}
               </tr>
             </tfoot>
           )}

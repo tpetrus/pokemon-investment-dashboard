@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { money, pct, tone } from '../lib/format.js';
 
 export function Card({ title, note, children, flush = false, className = '', ...rest }) {
@@ -26,8 +26,24 @@ export function Kpi({ label, value, foot, valueTone }) {
 }
 
 export function Tabs({ tabs, active, onChange }) {
+  const rail = useRef(null);
+
+  // Below 860px the tab strip is a horizontal scroller (see global.css). A tab
+  // restored from localStorage can start off-screen, so pull it into view — and
+  // only along the x axis, since scrollIntoView would otherwise jump the page.
+  useEffect(() => {
+    const el = rail.current?.querySelector('[aria-selected="true"]');
+    if (!el || !rail.current || rail.current.scrollWidth <= rail.current.clientWidth) return;
+    const strip = rail.current.getBoundingClientRect();
+    const tab = el.getBoundingClientRect();
+    rail.current.scrollBy({
+      left: tab.left - strip.left - (strip.width - tab.width) / 2,
+      behavior: 'smooth',
+    });
+  }, [active]);
+
   return (
-    <div className="tabs" role="tablist" aria-label="Dashboard sections">
+    <div className="tabs" role="tablist" aria-label="Dashboard sections" ref={rail}>
       {tabs.map((t) => (
         <button
           key={t.id}

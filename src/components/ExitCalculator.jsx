@@ -181,7 +181,7 @@ export default function ExitCalculator({ holdings }) {
 
 function Line({ label, value, strong, toneClass }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'baseline' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '2px 16px', alignItems: 'baseline' }}>
       <span style={{ color: 'var(--ink-2)', fontWeight: strong ? 600 : 400 }}>{label}</span>
       <span className={`num ${toneClass || ''}`} style={{ fontWeight: strong ? 700 : 500 }}>{value}</span>
     </div>

@@ -31,7 +31,7 @@ export default function DataPanel({ sheets, enabled, onToggleSheet, mappings, on
 
       {sheets.filter((s) => !s.readError && enabled[s.id] !== false).map((s) => (
         <Card key={s.id} title={`Column mapping — ${s.file}${s.sheet ? ` · ${s.sheet}` : ''}`} note="Guessed from your headers; change anything that looks wrong">
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 14 }}>
             {FIELDS.map((f) => (
               <div className="field" key={f.key}>
                 <label htmlFor={`${s.id}-${f.key}`}>{f.label}</label>
