@@ -1,13 +1,42 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { money, pct, tone } from '../lib/format.js';
 
-export function Card({ title, note, children, flush = false, className = '', ...rest }) {
+/**
+ * Tap-to-toggle "what does this mean" affordance. A real <button> toggle, not a
+ * hover tooltip — there is no hover on touch (see CLAUDE.md) — and the panel
+ * renders in normal flow rather than as a popover, so nothing has to be
+ * positioned or clamped against a 320px viewport.
+ */
+export function InfoBtn({ open, onToggle, label }) {
+  return (
+    <button
+      type="button"
+      className="infotip__btn"
+      aria-expanded={open}
+      aria-label={open ? `Hide explanation of ${label}` : `Explain ${label}`}
+      onClick={onToggle}
+    >
+      <span aria-hidden="true">i</span>
+    </button>
+  );
+}
+
+export function Card({ title, note, info, children, flush = false, className = '', ...rest }) {
+  const [open, setOpen] = useState(false);
   return (
     <section className={`card ${flush ? 'card--flush' : ''} ${className}`} {...rest}>
-      {(title || note) && (
+      {(title || note || info) && (
         <header className="card__head" style={flush ? { padding: '24px 24px 0' } : undefined}>
-          {title && <h3 className="card__title">{title}</h3>}
+          {title && (
+            <span className="card__titlewrap">
+              <h3 className="card__title">{title}</h3>
+              {info && (
+                <InfoBtn open={open} onToggle={() => setOpen((v) => !v)} label={typeof title === 'string' ? title : 'this'} />
+              )}
+            </span>
+          )}
           {note && <span className="card__note">{note}</span>}
+          {info && open && <div className="infobox" role="note">{info}</div>}
         </header>
       )}
       {children}
@@ -15,10 +44,15 @@ export function Card({ title, note, children, flush = false, className = '', ...
   );
 }
 
-export function Kpi({ label, value, foot, valueTone }) {
+export function Kpi({ label, value, foot, valueTone, info }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="card">
-      <div className="kpi__label">{label}</div>
+      <div className="kpi__label">
+        <span>{label}</span>
+        {info && <InfoBtn open={open} onToggle={() => setOpen((v) => !v)} label={label} />}
+      </div>
+      {info && open && <div className="infobox" role="note">{info}</div>}
       <div className={`kpi__value ${valueTone || ''}`}>{value}</div>
       {foot && <div className="kpi__foot">{foot}</div>}
     </div>

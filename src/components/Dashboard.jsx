@@ -6,8 +6,9 @@ import ExitCalculator from './ExitCalculator.jsx';
 import DataPanel from './DataPanel.jsx';
 import HistoryPanel from './HistoryPanel.jsx';
 import SetIcon from './SetIcon.jsx';
-import { guessMapping, normalizeRows, computeMetrics, groupBy, auditRows, snapshotDateFrom } from '../lib/normalize.js';
+import { guessMapping, normalizeRows, computeMetrics, groupBy, auditRows, herfindahl, snapshotDateFrom } from '../lib/normalize.js';
 import { buildPortfolioSeries, buildProductSeries } from '../lib/history.js';
+import { buildReturnSeries, buildDrawdownSeries, xirr, cashflowsFromHoldings } from '../lib/returns.js';
 import { money, signedMoney, pct, count, plainPct, duration, tone, shortDate } from '../lib/format.js';
 
 const STORE_KEY = 'pokemon-dashboard-v1';
@@ -93,6 +94,8 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
 
   const portfolioSeries = useMemo(() => buildPortfolioSeries(dailyHoldings), [dailyHoldings]);
   const productSeries = useMemo(() => buildProductSeries(dailyHoldings), [dailyHoldings]);
+  const returnSeries = useMemo(() => buildReturnSeries(portfolioSeries), [portfolioSeries]);
+  const drawdownSeries = useMemo(() => buildDrawdownSeries(returnSeries), [returnSeries]);
 
   // The file currently driving `initialSheets` (and so the rest of the
   // dashboard) is only ever a fallback if the true most-recent candidate — by
@@ -117,8 +120,36 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
   const byVendor = useMemo(() => groupBy(m.held.filter((h) => h.vendor), 'vendor'), [m.held]);
 
   const topByValue = useMemo(() => [...m.held].sort((a, b) => b.totalValue - a.totalValue), [m.held]);
-  const concentration = m.valueHeld > 0 ? topByValue.slice(0, 3).reduce((a, h) => a + h.totalValue, 0) / m.valueHeld : null;
   const biggestSet = bySet[0];
+
+  // Concentration: Herfindahl index (Σ of squared value shares) with its
+  // reciprocal read as "as concentrated as N equal-weight holdings".
+  const hhiPosition = useMemo(() => herfindahl(m.held.map((h) => h.totalValue)), [m.held]);
+  const hhiSet = useMemo(() => herfindahl(bySet.map((g) => g.value)), [bySet]);
+  const hhiType = useMemo(() => herfindahl(byType.map((g) => g.value)), [byType]);
+
+  // Portfolio return. XIRR (money-weighted) from this snapshot's dated cash
+  // flows; falls back to a plain since-inception return, and stays un-annualized
+  // for a portfolio under a year old (GIPS: short periods must not be annualized).
+  const firstBuy = useMemo(
+    () => m.held.concat(m.sold).map((h) => h.purchaseDate).filter(Boolean).sort()[0] ?? null,
+    [m.held, m.sold],
+  );
+  const spanYears = firstBuy
+    ? (Date.now() - Date.parse(`${firstBuy}T12:00:00Z`)) / (365 * 86400000)
+    : null;
+  const mwr = useMemo(() => xirr(cashflowsFromHoldings(holdings)), [holdings]);
+  const totalReturn = (m.costHeld + m.costSold) > 0
+    ? (m.valueHeld + m.proceeds) / (m.costHeld + m.costSold) - 1
+    : null;
+  const returnValue = spanYears != null && spanYears >= 1 ? (mwr ?? totalReturn) : totalReturn;
+  const returnFoot = spanYears == null
+    ? 'Add purchase dates for a return figure'
+    : spanYears < 1
+      ? 'Since first buy · not annualized (under a year)'
+      : mwr != null
+        ? 'Annualized · money-weighted (XIRR)'
+        : 'Total return · XIRR needs dated buys and sales';
 
   const gainers = useMemo(
     () => [...m.held].filter((h) => h.roi != null).sort((a, b) => b.roi - a.roi),
@@ -194,6 +225,8 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
               <HistoryPanel
                 portfolioSeries={portfolioSeries}
                 productSeries={productSeries}
+                returnSeries={returnSeries}
+                drawdownSeries={drawdownSeries}
                 snapshots={snapshots}
                 skipped={skipped}
               />
@@ -212,13 +245,62 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                   value={money(m.valueHeld)}
                   foot={snapshot ? `${count(m.positions)} positions · priced ${shortDate(snapshot)}` : `${count(m.positions)} positions still held`}
                 />
-                <Kpi label="Cost basis" value={money(m.costHeld)} foot={m.avgHoldDays ? `Average hold ${duration(m.avgHoldDays)}` : 'Add purchase dates for hold length'} />
-                <Kpi label="Unrealized" value={signedMoney(m.unrealized)} valueTone={tone(m.unrealized)} foot={`${pct(m.roiHeld)} on cost`} />
+                <Kpi
+                  label="Cost basis"
+                  value={money(m.costHeld)}
+                  foot={m.avgHoldDays ? `Average hold ${duration(m.avgHoldDays)}` : 'Add purchase dates for hold length'}
+                  info={
+                    <p>
+                      <strong>Cost basis</strong> is the total you paid for the positions you still hold.
+                      Every profit and return figure on this page is measured against it.
+                    </p>
+                  }
+                />
+                <Kpi
+                  label="Unrealized"
+                  value={signedMoney(m.unrealized)}
+                  valueTone={tone(m.unrealized)}
+                  foot={`${pct(m.roiHeld)} on cost`}
+                  info={
+                    <p>
+                      <strong>Unrealized profit / loss</strong> is what you'd make or lose if you sold
+                      everything you hold right now at market value. It moves with prices every day and
+                      isn't locked in until you actually sell.
+                    </p>
+                  }
+                />
                 <Kpi
                   label="Realized"
                   value={m.soldCount ? signedMoney(m.realized) : '—'}
                   valueTone={tone(m.realized)}
                   foot={m.soldCount ? `${count(m.soldCount)} sold · ${pct(m.realizedRoi)}` : 'Nothing sold yet'}
+                  info={
+                    <p>
+                      <strong>Realized profit / loss</strong> is what you've actually banked on positions
+                      you've already sold — proceeds minus what those items cost you. Unlike unrealized
+                      P/L it doesn't change once the sale is done.
+                    </p>
+                  }
+                />
+                <Kpi
+                  label="Return"
+                  value={pct(returnValue)}
+                  valueTone={tone(returnValue)}
+                  foot={returnFoot}
+                  info={
+                    <>
+                      <p>
+                        <strong>Money-weighted return (XIRR).</strong> The one annual growth rate that,
+                        applied to every dollar from the day you spent it, lands on today's value. It
+                        reflects your timing — adding money just before a run-up lifts it, and the reverse.
+                      </p>
+                      <p>
+                        Annualized once your first purchase is over a year old. Before that it's the plain
+                        gain since you started, <em>not</em> annualized — stretching a few months into a
+                        yearly rate would overstate it.
+                      </p>
+                    </>
+                  }
                 />
               </div>
 
@@ -232,12 +314,36 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                 </Card>
 
                 <div className="stack">
-                  <Card title="Concentration">
+                  <Card
+                    title="Concentration"
+                    note="Herfindahl index — lower is more spread out"
+                    info={
+                      <>
+                        <p>
+                          <strong>Herfindahl index (HHI).</strong> Square each position's share of your
+                          total value, then add them up. Many positions of similar size give a low
+                          number; most of your money in one gives a number near 1. Rough scale: below
+                          ~0.15 is well spread, above ~0.25 is concentrated.
+                        </p>
+                        <p>
+                          <strong>Equal-weight positions</strong> is just 1 ÷ HHI. An HHI of 0.20 carries
+                          the same concentration risk as five positions of identical size — however many
+                          you actually hold. "By set" and "by type" run the same math on those groupings.
+                        </p>
+                      </>
+                    }
+                  >
                     <div className="stack" style={{ gap: 14 }}>
                       <div className="well">
-                        <div className="kpi__label">Top three positions</div>
-                        <div className="kpi__value num" style={{ fontSize: 'var(--step-2)' }}>{concentration == null ? '—' : plainPct(concentration, 0)}</div>
-                        <div className="kpi__foot">of total market value — {topByValue.slice(0, 3).map((h) => h.name).join(', ') || '—'}</div>
+                        <div className="kpi__label">By position (HHI)</div>
+                        <div className="kpi__value num" style={{ fontSize: 'var(--step-2)' }}>
+                          {hhiPosition ? hhiPosition.hhi.toFixed(2) : '—'}
+                        </div>
+                        <div className="kpi__foot">
+                          {hhiPosition
+                            ? `as concentrated as ${hhiPosition.effectiveN.toFixed(1)} equal-weight positions · by set ${hhiSet ? hhiSet.hhi.toFixed(2) : '—'} · by type ${hhiType ? hhiType.hhi.toFixed(2) : '—'}`
+                            : 'Map a market value column to see concentration.'}
+                        </div>
                       </div>
                       <div className="well" style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'baseline' }}>
                         <div style={{ minWidth: 0 }}>

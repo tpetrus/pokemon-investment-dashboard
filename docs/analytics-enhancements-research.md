@@ -1,5 +1,11 @@
 # Portfolio analytics enhancements for the Pokémon investment dashboard
 
+> **Status (2026-08-31):** A1, A2, A3 and A4 are implemented — `src/lib/returns.js`
+> (TWR index, XIRR, CAGR, drawdown), a Herfindahl concentration card on Overview, a
+> "Return" KPI, "Return over time" + "Drawdown from peak" cards on History, and a
+> real time-scaled x-axis (`timeAxis()` in `Charts.jsx`) on every history chart.
+> C8's `shortPct` formatter landed alongside. Everything else below is still open.
+
 Research output from the `development-research` agent, 2026-08-31. The agent read the
 repo before researching; notes below are grounded in the actual code:
 `src/lib/history.js`, `src/lib/normalize.js` (`computeMetrics`, `auditRows`),

@@ -19,6 +19,8 @@ There is no build step for data and no database — a page load is a bucket read
 src/lib/loadWorkbooks.js   fetch + parse up to MAX_HISTORY_SNAPSHOTS recent objects from R2
 src/lib/normalize.js       synonym-based column mapping, coercion, P/L math, audit
 src/lib/history.js         pure aggregation of per-snapshot holdings into portfolio/product series
+src/lib/returns.js         pure return math — chained time-weighted return index, XIRR
+                            (money-weighted) from one snapshot's dated cash flows, CAGR, drawdown
 src/lib/format.js          every user-visible number goes through here
 src/lib/useMediaQuery.js   JS-side breakpoints, kept in step with global.css
 src/data/tcgSets.json      one-off snapshot of the Pokémon TCG API's /v2/sets — refresh with
@@ -31,11 +33,22 @@ src/components/            Dashboard, Charts, HoldingsTable, ExitCalculator, Dat
 src/styles/global.css      the whole design system; there is no CSS-in-JS layer
 ```
 
-The History tab (`HistoryPanel.jsx`) charts portfolio value/cost basis and per-product
-price over time from that snapshot history, plus a combined read/skip status table.
-Only the newest snapshot uses the user's saved column-mapping overrides — older
-snapshots use `guessMapping()` only, since a manual override is stored as literal
-header text that may not exist in an older file.
+The History tab (`HistoryPanel.jsx`) charts portfolio value/cost basis, a time-weighted
+return index (base 100) with its drawdown-from-peak, and per-product price over time
+from that snapshot history, plus a combined read/skip status table. Time-series charts
+use a real time-scaled x-axis (`timeAxis()` in `Charts.jsx`) — a 6-month gap between
+snapshots is drawn six times wider than a 1-month gap, never equidistant. Only the
+newest snapshot uses the user's saved column-mapping overrides — older snapshots use
+`guessMapping()` only, since a manual override is stored as literal header text that
+may not exist in an older file.
+
+Portfolio return figures come from `src/lib/returns.js`: the time-weighted index is
+chained across snapshots (between-snapshot flows inferred from the change in cost basis
+and cumulative proceeds — approximate, since individual buys/sells inside an interval
+are invisible); XIRR is solved from the newest snapshot's dated per-lot cash flows and
+is only as complete as the sheet's purchase/sold dates. The Overview "Return" KPI shows
+XIRR annualized once the portfolio is over a year old, and an un-annualized
+since-inception return before that (GIPS: short periods must not be annualized).
 
 `npm run dev` needs `wrangler login` — the dev R2 binding has `"remote": true`, so
 local dev talks to the real `pokemon-data-dev` bucket rather than an empty simulated

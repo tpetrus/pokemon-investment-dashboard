@@ -23,9 +23,12 @@ export function productKey(name, set) {
 
 /**
  * @param {Array<{date: string, holdings: Array}>} dailyHoldings
- * @returns {Array<{date, costHeld, valueHeld, unrealized, roiHeld, realized, realizedRoi, positions}>}
+ * @returns {Array<{date, costHeld, valueHeld, unrealized, roiHeld, costSold, proceeds, realized, realizedRoi, positions}>}
  *   Ascending by date. A date is omitted only when its snapshot produced zero
- *   holdings rows entirely (nothing to report) — never zero-filled.
+ *   holdings rows entirely (nothing to report) — never zero-filled. `costSold`
+ *   and `proceeds` are cumulative as of each snapshot (a sold row persists in
+ *   every later export), so their between-snapshot deltas are the external cash
+ *   flows `buildReturnSeries` needs.
  */
 export function buildPortfolioSeries(dailyHoldings) {
   return dailyHoldings
@@ -38,6 +41,8 @@ export function buildPortfolioSeries(dailyHoldings) {
         valueHeld: m.valueHeld,
         unrealized: m.unrealized,
         roiHeld: m.roiHeld,
+        costSold: m.costSold,
+        proceeds: m.proceeds,
         realized: m.realized,
         realizedRoi: m.realizedRoi,
         positions: m.positions,

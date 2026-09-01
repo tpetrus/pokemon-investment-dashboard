@@ -160,6 +160,53 @@ p:last-child { margin-bottom: 0; }
 .card__title { font-family: var(--display); font-size: var(--step-1); font-weight: 600; }
 .card__note { font-size: var(--step--1); color: var(--ink-3); }
 
+/* ---------- inline explainers ---------- */
+
+/* Keeps the title and its ⓘ together as one flex child, so a card header with an
+   explainer still reads as [title]……[note] rather than floating the ⓘ mid-row. */
+.card__titlewrap { display: inline-flex; align-items: baseline; gap: 7px; flex-wrap: wrap; min-width: 0; }
+
+.infotip__btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--lift-sm);
+  color: var(--ink-3);
+  font: italic 700 12px / 1 var(--display);
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  position: relative;
+}
+/* 20px is the visible dot; the invisible ::after pads the tap target to 44px
+   without disturbing baseline layout. */
+.infotip__btn::after { content: ''; position: absolute; inset: -12px; }
+.infotip__btn[aria-expanded='true'] { box-shadow: var(--press-sm); color: var(--accent); }
+.infotip__btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.infobox {
+  flex-basis: 100%;   /* drop to its own line inside a flex header */
+  width: 100%;        /* fill the parent in plain block flow (KPI / stat tiles) */
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  box-shadow: var(--press-sm);
+  font: 400 var(--step--1) / 1.55 var(--body);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink-2);
+}
+.infobox strong { color: var(--ink); font-weight: 600; }
+.infobox p { margin: 0 0 7px; }
+.infobox p:last-child { margin: 0; }
+
 .well {
   border-radius: var(--r-md);
   box-shadow: var(--press);
@@ -468,7 +515,7 @@ td { padding: 15px 16px; border-top: 1px solid rgba(140, 150, 172, 0.22); vertic
   .filters > .filters__search { grid-column: span 1; }
 }
 
-.kpi__label { font-size: var(--step--1); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.kpi__label { font-size: var(--step--1); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
 .kpi__value { font-family: var(--display); font-size: var(--step-3); font-weight: 600; line-height: 1.15; margin-top: 10px; }
 .kpi__foot { font-size: var(--step--1); color: var(--ink-2); margin-top: 8px; }
 

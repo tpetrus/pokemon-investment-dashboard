@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, AreaChart, Area, ScatterChart, Scatter, ZAxis, ReferenceLine, LabelList, Legend,
 } from 'recharts';
-import { money, signedMoney, pct, plainPct, count } from '../lib/format.js';
+import { money, signedMoney, pct, plainPct, shortPct, count, shortDate } from '../lib/format.js';
 import { useIsNarrow } from '../lib/useMediaQuery.js';
 import SetIcon from './SetIcon.jsx';
 
@@ -27,6 +27,38 @@ const shortMoney = (v) => {
 };
 
 const clip = (s, max) => (String(s).length > max ? `${String(s).slice(0, max - 1)}…` : String(s));
+
+/* Time-series charts get a real time axis, not a category axis: a 6-month gap
+   between two snapshots has to look six times wider than a one-month gap, or
+   every slope on the chart is a lie. Each series row carries `date` (ISO); `t`
+   is the millisecond timestamp the axis actually positions on. */
+const toTime = (iso) => Date.parse(`${iso}T12:00:00Z`);
+const withTime = (rows) => rows.map((d) => ({ ...d, t: toTime(d.date) }));
+
+const tickDate = (t, long) => {
+  const d = new Date(t);
+  return long
+    ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+/** Shared X-axis props for a time series. `long` (month + year ticks) kicks in
+    past ~7 months of span, and always on a phone where "Feb 12" won't fit. */
+const timeAxis = (narrow, rows) => {
+  const ts = rows.map((r) => r.t).filter(Number.isFinite);
+  const spanDays = ts.length > 1 ? (Math.max(...ts) - Math.min(...ts)) / 86400000 : 0;
+  const long = narrow || spanDays > 210;
+  return {
+    dataKey: 't',
+    type: 'number',
+    scale: 'time',
+    domain: ['dataMin', 'dataMax'],
+    tickFormatter: (t) => tickDate(t, long),
+    tickCount: narrow ? 4 : 6,
+    minTickGap: narrow ? 24 : 20,
+    ...axisFor(narrow),
+  };
+};
 
 const panel = {
   background: '#e9edf4',
@@ -144,10 +176,11 @@ export function CostVsValueBars({ data }) {
 export function CapitalDeployed({ data }) {
   const narrow = useIsNarrow();
   const axis = axisFor(narrow);
+  const rows = withTime(data);
 
   return (
     <ResponsiveContainer width="100%" height={narrow ? 220 : 280}>
-      <AreaChart data={data} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
         <defs>
           <linearGradient id="deployed" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#3b4bc4" stopOpacity={0.35} />
@@ -155,12 +188,12 @@ export function CapitalDeployed({ data }) {
           </linearGradient>
         </defs>
         <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
-        <XAxis dataKey="date" {...axis} minTickGap={narrow ? 44 : 28} />
+        <XAxis {...timeAxis(narrow, rows)} />
         <YAxis tickFormatter={shortMoney} width={narrow ? 46 : 72} {...axis} />
         <Tooltip
-          content={({ active, payload, label }) =>
+          content={({ active, payload }) =>
             active && payload?.length ? (
-              <Box title={label} rows={[['Cumulative cost basis', money(payload[0].value)], ['Latest buy', payload[0].payload.name]]} />
+              <Box title={shortDate(payload[0].payload.date)} rows={[['Cumulative cost basis', money(payload[0].value)], ['Latest buy', payload[0].payload.name]]} />
             ) : null
           }
         />
@@ -210,10 +243,11 @@ export function HoldVsReturn({ data }) {
 export function PortfolioHistoryChart({ data }) {
   const narrow = useIsNarrow();
   const axis = axisFor(narrow);
+  const rows = withTime(data);
 
   return (
     <ResponsiveContainer width="100%" height={narrow ? 240 : 300}>
-      <AreaChart data={data} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
         <defs>
           <linearGradient id="portfolioValue" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#3b4bc4" stopOpacity={0.35} />
@@ -221,15 +255,15 @@ export function PortfolioHistoryChart({ data }) {
           </linearGradient>
         </defs>
         <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
-        <XAxis dataKey="date" {...axis} minTickGap={narrow ? 44 : 28} />
+        <XAxis {...timeAxis(narrow, rows)} />
         <YAxis tickFormatter={shortMoney} width={narrow ? 46 : 72} {...axis} />
         <Tooltip
-          content={({ active, payload, label }) => {
+          content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload;
             return (
               <Box
-                title={label}
+                title={shortDate(p.date)}
                 rows={[
                   ['Market value', money(p.valueHeld)],
                   ['Cost basis', money(p.costHeld)],
@@ -258,13 +292,14 @@ export function PortfolioHistoryChart({ data }) {
 export function UnrealizedHistoryChart({ data }) {
   const narrow = useIsNarrow();
   const axis = axisFor(narrow);
+  const rows = withTime(data);
   const latest = data.at(-1)?.unrealized ?? 0;
   const color = latest >= 0 ? '#146b46' : '#ab2a20';
   const gradientId = latest >= 0 ? 'unrealizedGain' : 'unrealizedLoss';
 
   return (
     <ResponsiveContainer width="100%" height={narrow ? 220 : 280}>
-      <AreaChart data={data} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.35} />
@@ -272,16 +307,16 @@ export function UnrealizedHistoryChart({ data }) {
           </linearGradient>
         </defs>
         <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
-        <XAxis dataKey="date" {...axis} minTickGap={narrow ? 44 : 28} />
+        <XAxis {...timeAxis(narrow, rows)} />
         <YAxis tickFormatter={shortMoney} width={narrow ? 50 : 76} {...axis} />
         <ReferenceLine y={0} stroke="#4d566b" strokeDasharray="4 4" />
         <Tooltip
-          content={({ active, payload, label }) => {
+          content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload;
             return (
               <Box
-                title={label}
+                title={shortDate(p.date)}
                 rows={[
                   ['Unrealized', signedMoney(p.unrealized)],
                   ['Return', pct(p.roiHeld)],
@@ -308,10 +343,11 @@ export function UnrealizedHistoryChart({ data }) {
 export function ProductHistoryChart({ points }) {
   const narrow = useIsNarrow();
   const axis = axisFor(narrow);
+  const rows = withTime(points);
 
   return (
     <ResponsiveContainer width="100%" height={narrow ? 200 : 260}>
-      <AreaChart data={points} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
         <defs>
           <linearGradient id="productPrice" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#0f7b8a" stopOpacity={0.35} />
@@ -319,15 +355,106 @@ export function ProductHistoryChart({ points }) {
           </linearGradient>
         </defs>
         <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
-        <XAxis dataKey="date" {...axis} minTickGap={narrow ? 44 : 28} />
+        <XAxis {...timeAxis(narrow, rows)} />
         <YAxis tickFormatter={shortMoney} width={narrow ? 46 : 72} {...axis} />
         <Tooltip
-          content={({ active, payload, label }) => {
+          content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
-            return <Box title={label} rows={[['Price per unit', money(payload[0].payload.unitValue)]]} />;
+            const p = payload[0].payload;
+            return <Box title={shortDate(p.date)} rows={[['Price per unit', money(p.unitValue)]]} />;
           }}
         />
         <Area type="monotone" dataKey="unitValue" stroke="#0f7b8a" strokeWidth={2.5} fill="url(#productPrice)" />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Time-weighted return index, base 100 at the first snapshot (see
+ * `src/lib/returns.js`). This is the "how did the collection perform" line —
+ * deposits and withdrawals are chained out, so it moves only on price. The
+ * y-axis is index points, not dollars; 100 (break-even) gets a reference line.
+ */
+export function ReturnHistoryChart({ data }) {
+  const narrow = useIsNarrow();
+  const rows = withTime(data);
+
+  return (
+    <ResponsiveContainer width="100%" height={narrow ? 220 : 280}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+        <defs>
+          <linearGradient id="twrIndex" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b4bc4" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#3b4bc4" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
+        <XAxis {...timeAxis(narrow, rows)} />
+        <YAxis
+          tickFormatter={(v) => `${Math.round(v)}`}
+          width={narrow ? 34 : 46}
+          domain={[(min) => Math.min(100, Math.floor(min)), (max) => Math.max(100, Math.ceil(max))]}
+          {...axisFor(narrow)}
+        />
+        <ReferenceLine y={100} stroke="#4d566b" strokeDasharray="4 4" />
+        <Tooltip
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const p = payload[0].payload;
+            return (
+              <Box
+                title={shortDate(p.date)}
+                rows={[
+                  ['Return index', p.index.toFixed(1)],
+                  ['Cumulative', pct(p.index / 100 - 1)],
+                  ['This period', p.periodReturn == null ? '—' : pct(p.periodReturn)],
+                ]}
+              />
+            );
+          }}
+        />
+        <Area type="monotone" dataKey="index" name="Return index (start = 100)" stroke="#3b4bc4" strokeWidth={2.5} fill="url(#twrIndex)" />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Underwater chart: how far the return index sits below its own earlier peak, as
+ * a negative percentage. Built on the TWR index rather than raw market value, so
+ * adding capital never shows up here as a loss.
+ */
+export function DrawdownChart({ data }) {
+  const narrow = useIsNarrow();
+  const rows = withTime(data);
+
+  return (
+    <ResponsiveContainer width="100%" height={narrow ? 190 : 230}>
+      <AreaChart data={rows} margin={{ left: 0, right: narrow ? 6 : 12, top: 8, bottom: 4 }}>
+        <defs>
+          <linearGradient id="drawdown" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ab2a20" stopOpacity={0.05} />
+            <stop offset="100%" stopColor="#ab2a20" stopOpacity={0.32} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="rgba(107,115,135,.18)" vertical={false} />
+        <XAxis {...timeAxis(narrow, rows)} />
+        <YAxis
+          tickFormatter={shortPct}
+          width={narrow ? 40 : 52}
+          domain={[(min) => Math.min(min, -0.01), 0]}
+          {...axisFor(narrow)}
+        />
+        <ReferenceLine y={0} stroke="#4d566b" />
+        <Tooltip
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const p = payload[0].payload;
+            return <Box title={shortDate(p.date)} rows={[['Drawdown from peak', pct(p.drawdown)]]} />;
+          }}
+        />
+        <Area type="monotone" dataKey="drawdown" stroke="#ab2a20" strokeWidth={2} fill="url(#drawdown)" />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -342,7 +469,7 @@ export function VendorBars({ data }) {
     <ResponsiveContainer width="100%" height={Math.max(narrow ? 180 : 200, rows.length * (narrow ? 40 : 44) + 30)}>
       <BarChart data={rows} layout="vertical" margin={{ left: narrow ? 0 : 8, right: narrow ? 40 : 46, top: 4, bottom: 4 }}>
         <CartesianGrid horizontal={false} stroke="rgba(107,115,135,.18)" />
-        <XAxis type="number" tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} {...axis} />
+        <XAxis type="number" tickFormatter={shortPct} {...axis} />
         <YAxis
           type="category"
           dataKey="key"

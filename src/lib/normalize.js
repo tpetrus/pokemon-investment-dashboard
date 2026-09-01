@@ -292,6 +292,8 @@ export function computeMetrics(holdings) {
     valueHeld,
     unrealized: valueHeld - costHeld,
     roiHeld: costHeld > 0 ? (valueHeld - costHeld) / costHeld : null,
+    costSold,
+    proceeds,
     realized: proceeds - costSold,
     realizedRoi: costSold > 0 ? (proceeds - costSold) / costSold : null,
     soldCount: sold.length,
@@ -321,6 +323,20 @@ export function groupBy(holdings, key) {
   return [...map.values()]
     .map((g) => ({ ...g, gain: g.value - g.cost, roi: g.cost > 0 ? (g.value - g.cost) / g.cost : null }))
     .sort((a, b) => b.value - a.value);
+}
+
+/**
+ * Herfindahl-Hirschman Index over a list of positive weights (position values,
+ * per-set totals, …). `hhi` is Σ(shareᵢ²) on a 0–1 scale — 1 is everything in one
+ * bucket, 1/n is perfectly even. `effectiveN` = 1/hhi is the same thing read as
+ * "this is as concentrated as N equal-weight holdings". Returns null when there is
+ * nothing positive to weigh.
+ */
+export function herfindahl(values) {
+  const total = values.reduce((a, v) => a + (v > 0 ? v : 0), 0);
+  if (!(total > 0)) return null;
+  const hhi = values.reduce((a, v) => (v > 0 ? a + (v / total) ** 2 : a), 0);
+  return { hhi, effectiveN: hhi > 0 ? 1 / hhi : null };
 }
 
 /** Data-quality checks, so silent gaps in the sheet do not become silently wrong numbers. */

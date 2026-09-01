@@ -17,6 +17,10 @@ export const pct = (n, digits = 1) =>
 export const plainPct = (n, digits = 1) =>
   n == null || Number.isNaN(n) ? '—' : `${(n * 100).toFixed(digits)}%`;
 
+/** Terse unsigned percent for chart axes — the `shortMoney` of percentages. */
+export const shortPct = (n, digits = 0) =>
+  n == null || Number.isNaN(n) ? '—' : `${(n * 100).toFixed(digits)}%`;
+
 export const count = (n) => (n == null ? '—' : num.format(n));
 
 export const shortDate = (iso) =>
