@@ -46,7 +46,7 @@ const SYNONYMS = {
   notes: ['notes', 'note', 'comments', 'comment', 'remarks'],
 };
 
-const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
  * Columns holding the same value in every row (an export's "Portfolio Name", a

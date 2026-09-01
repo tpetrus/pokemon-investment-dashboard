@@ -4,13 +4,17 @@ import { AllocationDonut, CostVsValueBars, CapitalDeployed, HoldVsReturn, Vendor
 import HoldingsTable from './HoldingsTable.jsx';
 import ExitCalculator from './ExitCalculator.jsx';
 import DataPanel from './DataPanel.jsx';
+import HistoryPanel from './HistoryPanel.jsx';
+import SetIcon from './SetIcon.jsx';
 import { guessMapping, normalizeRows, computeMetrics, groupBy, auditRows, snapshotDateFrom } from '../lib/normalize.js';
+import { buildPortfolioSeries, buildProductSeries } from '../lib/history.js';
 import { money, signedMoney, pct, count, plainPct, duration, tone, shortDate } from '../lib/format.js';
 
 const STORE_KEY = 'pokemon-dashboard-v1';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'history', label: 'History' },
   { id: 'allocation', label: 'Allocation' },
   { id: 'performance', label: 'Performance' },
   { id: 'positions', label: 'Positions' },
@@ -18,7 +22,7 @@ const TABS = [
   { id: 'data', label: 'Data' },
 ];
 
-export default function Dashboard({ initialSheets = [], dir = '', loadError = null }) {
+export default function Dashboard({ initialSheets = [], dir = '', loadError = null, snapshots = [], skipped = [] }) {
   const [tab, setTab] = useState('overview');
   const [enabled, setEnabled] = useState({});
   const [overrides, setOverrides] = useState({});
@@ -71,6 +75,40 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
 
   const snapshotAge = snapshot ? Math.round((Date.now() - Date.parse(`${snapshot}T12:00:00`)) / 86400000) : null;
 
+  // Per snapshot: the newest one reuses the exact `holdings` above (guessMapping
+  // merged with the user's saved overrides, respecting excluded sheets). Every
+  // older snapshot gets guessMapping() only — a manual override is stored as
+  // literal header text (e.g. an embedded "as of" date) and cannot replay onto a
+  // different file whose equivalent column is named something else.
+  const dailyHoldings = useMemo(() => {
+    return snapshots.map((snap, i) => {
+      if (i === snapshots.length - 1) return { date: snap.date, holdings };
+      const rows = [];
+      for (const s of snap.sheets) {
+        rows.push(...normalizeRows(s.rows, guessMapping(s.headers, s.rows), s.sheet || s.file));
+      }
+      return { date: snap.date, holdings: rows };
+    });
+  }, [snapshots, holdings]);
+
+  const portfolioSeries = useMemo(() => buildPortfolioSeries(dailyHoldings), [dailyHoldings]);
+  const productSeries = useMemo(() => buildProductSeries(dailyHoldings), [dailyHoldings]);
+
+  // The file currently driving `initialSheets` (and so the rest of the
+  // dashboard) is only ever a fallback if the true most-recent candidate — by
+  // date, across both successfully-parsed snapshots and skipped ones — turned
+  // out to be unreadable.
+  const latestFailed = useMemo(() => {
+    const all = [
+      ...snapshots.map((s) => ({ date: s.date, key: s.key, ok: true })),
+      ...skipped.map((s) => ({ date: s.date, key: s.key, ok: false, reason: s.reason })),
+    ];
+    if (!all.length) return null;
+    all.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const mostRecent = all.at(-1);
+    return mostRecent.ok ? null : mostRecent;
+  }, [snapshots, skipped]);
+
   const m = useMemo(() => computeMetrics(holdings), [holdings]);
   const audit = useMemo(() => auditRows(holdings), [holdings]);
 
@@ -120,6 +158,11 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
               Prices as of {shortDate(snapshot)}{snapshotAge > 60 ? ` · ${count(snapshotAge)} days old` : ''}
             </div>
           )}
+          {latestFailed && (
+            <div style={{ color: 'var(--warn)' }}>
+              Most recent upload ({latestFailed.key}) could not be read: {latestFailed.reason}. Showing {shortDate(snapshots.at(-1)?.date)} instead.
+            </div>
+          )}
         </div>
       </header>
 
@@ -135,14 +178,30 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
         <>
           <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-          {/* Every sheet excluded, or nothing mapped yet — every tab but Data
-              depends on holdings, so send the user back there rather than
-              showing them nothing with no way out. */}
-          {!hasData && tab !== 'data' && (
+          {/* Every sheet excluded, or nothing mapped yet — every tab but Data and
+              History depends on holdings, so send the user back there rather than
+              showing them nothing with no way out. History has its own gate below
+              since it depends on snapshot count, not the current sheet's mapping. */}
+          {!hasData && tab !== 'data' && tab !== 'history' && (
             <Empty title="Nothing to show">
               Every sheet is excluded, or no rows have a cost or value mapped yet.
               Head to the Data tab to include a sheet or fix its column mapping.
             </Empty>
+          )}
+
+          {tab === 'history' && (
+            snapshots.length > 1 ? (
+              <HistoryPanel
+                portfolioSeries={portfolioSeries}
+                productSeries={productSeries}
+                snapshots={snapshots}
+                skipped={skipped}
+              />
+            ) : (
+              <Empty title="Not enough history yet">
+                Need at least two readable snapshots to chart portfolio value over time. Upload more dated exports to R2.
+              </Empty>
+            )
           )}
 
           {hasData && tab === 'overview' && (
@@ -180,12 +239,15 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                         <div className="kpi__value num" style={{ fontSize: 'var(--step-2)' }}>{concentration == null ? '—' : plainPct(concentration, 0)}</div>
                         <div className="kpi__foot">of total market value — {topByValue.slice(0, 3).map((h) => h.name).join(', ') || '—'}</div>
                       </div>
-                      <div className="well">
-                        <div className="kpi__label">Largest set exposure</div>
-                        <div className="kpi__value num" style={{ fontSize: 'var(--step-2)' }}>
-                          {biggestSet ? plainPct(biggestSet.value / m.valueHeld, 0) : '—'}
+                      <div className="well" style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'baseline' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="kpi__label">Largest set exposure</div>
+                          <div className="kpi__value num" style={{ fontSize: 'var(--step-2)' }}>
+                            {biggestSet ? plainPct(biggestSet.value / m.valueHeld, 0) : '—'}
+                          </div>
+                          <div className="kpi__foot">{biggestSet ? `${biggestSet.key} · ${money(biggestSet.value)} across ${count(biggestSet.count)} positions` : '—'}</div>
                         </div>
-                        <div className="kpi__foot">{biggestSet ? `${biggestSet.key} · ${money(biggestSet.value)} across ${count(biggestSet.count)} positions` : '—'}</div>
+                        {biggestSet && <SetIcon set={biggestSet.key} variant="logo" />}
                       </div>
                     </div>
                   </Card>
@@ -246,7 +308,12 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                     <tbody>
                       {bySet.map((g) => (
                         <tr key={g.key}>
-                          <td style={{ fontWeight: 600 }}>{g.key}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <SetIcon set={g.key} size={18} />
+                              <span style={{ minWidth: 0 }}>{g.key}</span>
+                            </span>
+                          </td>
                           <td className="td-right num">{count(g.count)}</td>
                           <td className="td-right num">{count(g.units)}</td>
                           <td className="td-right num">{money(g.cost)}</td>

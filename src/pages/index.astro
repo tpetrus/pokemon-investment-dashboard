@@ -7,12 +7,14 @@ import '@fontsource/space-grotesk/600.css';
 import '@fontsource/space-grotesk/700.css';
 import '../styles/global.css';
 import Dashboard from '../components/Dashboard.jsx';
-import { loadWorkbooks } from '../lib/loadWorkbooks.js';
+import { loadSnapshotHistory } from '../lib/loadWorkbooks.js';
 import { env } from 'cloudflare:workers';
 
-// Load spreadsheets from R2 storage
+// Load snapshot history from R2 storage (most recent MAX_HISTORY_SNAPSHOTS files).
 const bucket = env.POKEMON_DATA;
-const { sheets, dir, error } = await loadWorkbooks(bucket);
+const { snapshots, skipped, dir, error } = await loadSnapshotHistory(bucket);
+const latest = snapshots.at(-1); // most recent, since snapshots is ascending
+const initialSheets = latest ? latest.sheets : [];
 ---
 
 <!doctype html>
@@ -27,7 +29,14 @@ const { sheets, dir, error } = await loadWorkbooks(bucket);
   </head>
   <body>
     <main class="shell">
-      <Dashboard client:load initialSheets={sheets} dir={dir} loadError={error} />
+      <Dashboard
+        client:load
+        initialSheets={initialSheets}
+        dir={dir}
+        loadError={error}
+        snapshots={snapshots}
+        skipped={skipped}
+      />
     </main>
   </body>
 </html>

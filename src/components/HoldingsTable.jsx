@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { money, pct, count, shortDate, duration, tone } from '../lib/format.js';
 import { useIsTablet } from '../lib/useMediaQuery.js';
+import SetIcon from './SetIcon.jsx';
 
 /**
  * `essential` marks the columns that survive on a phone. Twelve columns in a
@@ -167,16 +168,28 @@ export default function HoldingsTable({ holdings }) {
                   const cls = [c.align === 'right' ? 'td-right num' : '', c.toned ? tone(v) : ''].filter(Boolean).join(' ');
                   return (
                     <td key={c.key} className={cls}>
-                      {c.fmt ? c.fmt(v) : v}
+                      {c.key === 'set' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <SetIcon set={v} size={18} />
+                          {c.fmt ? c.fmt(v) : v}
+                        </span>
+                      ) : (
+                        c.fmt ? c.fmt(v) : v
+                      )}
                       {/* In compact mode the set column is gone, so it joins the
                           subtitle rather than disappearing from the row. */}
                       {c.key === 'name' && (r.productType !== 'Unassigned' || r.vendor || compact) && (
                         <span className="cell-sub">
-                          {[
-                            compact && r.set !== 'Unassigned' ? r.set : null,
-                            r.productType !== 'Unassigned' ? r.productType : null,
-                            r.vendor,
-                          ].filter(Boolean).join(' · ')}
+                          {compact && r.set !== 'Unassigned' && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <SetIcon set={r.set} size={16} />
+                              <span style={{ minWidth: 0 }}>
+                                {[r.set, r.productType !== 'Unassigned' ? r.productType : null, r.vendor].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                          )}
+                          {!(compact && r.set !== 'Unassigned') &&
+                            [r.productType !== 'Unassigned' ? r.productType : null, r.vendor].filter(Boolean).join(' · ')}
                         </span>
                       )}
                     </td>

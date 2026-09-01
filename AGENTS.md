@@ -16,13 +16,26 @@ by a single client-side island: `<Dashboard client:load>` in `src/pages/index.as
 There is no build step for data and no database — a page load is a bucket read.
 
 ```
-src/lib/loadWorkbooks.js   fetch + parse the most recent object in the R2 bucket
+src/lib/loadWorkbooks.js   fetch + parse up to MAX_HISTORY_SNAPSHOTS recent objects from R2
 src/lib/normalize.js       synonym-based column mapping, coercion, P/L math, audit
+src/lib/history.js         pure aggregation of per-snapshot holdings into portfolio/product series
 src/lib/format.js          every user-visible number goes through here
 src/lib/useMediaQuery.js   JS-side breakpoints, kept in step with global.css
-src/components/            Dashboard, Charts, HoldingsTable, ExitCalculator, DataPanel, ui
+src/data/tcgSets.json      one-off snapshot of the Pokémon TCG API's /v2/sets — refresh with
+                            `npm run fetch:sets`, never at build or request time
+src/lib/tcgSets.js         slug-based matching from a holding's free-text `set` string to a
+                            tcgSets.json entry; unmatched (including 'Unassigned') resolves to null
+src/components/SetIcon.jsx small symbol icon or wide logo image, hotlinked straight from the CDN
+                            URL in tcgSets.json; renders nothing if the set doesn't match
+src/components/            Dashboard, Charts, HoldingsTable, ExitCalculator, DataPanel, HistoryPanel, ui
 src/styles/global.css      the whole design system; there is no CSS-in-JS layer
 ```
+
+The History tab (`HistoryPanel.jsx`) charts portfolio value/cost basis and per-product
+price over time from that snapshot history, plus a combined read/skip status table.
+Only the newest snapshot uses the user's saved column-mapping overrides — older
+snapshots use `guessMapping()` only, since a manual override is stored as literal
+header text that may not exist in an older file.
 
 `npm run dev` needs `wrangler login` — the dev R2 binding has `"remote": true`, so
 local dev talks to the real `pokemon-data-dev` bucket rather than an empty simulated
@@ -120,6 +133,24 @@ That must be `true`. Then list anything sticking out:
 
 That must be empty. Check 320, 375, 768 and a desktop width, and confirm the desktop
 layout did not change.
+
+## Set images
+
+`npm run fetch:sets` re-runs `scripts/fetch-tcg-sets.mjs`, which pages through the public
+Pokémon TCG API (`api.pokemontcg.io/v2/sets`, no key needed — 1,000 requests/day keyless is
+plenty for an occasional manual run) and overwrites `src/data/tcgSets.json` with id/name/series/
+releaseDate and the `images.symbol`/`images.logo` URLs *verbatim* from the API response. Never
+reconstruct an image URL from a set id — a growing subset of sets (the newest ones, since a 2026
+migration toward a paid successor called Scrydex) resolve to images.scrydex.com instead of
+images.pokemontcg.io, and the API response is the only reliable source for which. Images are
+hotlinked at render time, never re-hosted — there is no Cloudflare Images binding in this app.
+`src/lib/tcgSets.js` matches a holding's free-text `set` field (there is no canonical set ID in
+the source spreadsheets) by exact name, then a small era-alias table plus subtitle stripping,
+then bounded substring matching; an unmatched set (including the 'Unassigned' sentinel) returns
+null and `SetIcon` renders nothing rather than a broken-image icon. Re-run `npm run fetch:sets`
+periodically to pick up newly released sets — the legacy pokemontcg.io API has an announced but
+undated end-of-life, so if the script starts failing outright rather than intermittently, that
+migration is the likely cause and the fetch URL/schema will need revisiting.
 
 ## Other conventions
 
