@@ -94,6 +94,29 @@ export function Tabs({ tabs, active, onChange }) {
 }
 
 /**
+ * Compact segmented switch — a lighter sibling of <Tabs> for a small, mutually
+ * exclusive choice (which sub-portfolio to show). Real <button>s in a labelled
+ * group; the strip scrolls sideways rather than wrapping if it ever has to.
+ */
+export function Segmented({ label, options, value, onChange }) {
+  return (
+    <div className="segmented" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className="segmented__btn"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Signature element. Each position gets an inset groove; the pill lands where the
  * position's return sits on a scale shared across the whole list, so relative
  * performance is legible without reading a single number.

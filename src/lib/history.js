@@ -1,9 +1,8 @@
 /**
  * Pure aggregation over already-normalized snapshot holdings. No R2 access, no
  * React — `Dashboard.jsx` builds `dailyHoldings` (one `guessMapping` +
- * `normalizeRows` pass per historical sheet, see its comments for why only the
- * newest snapshot gets localStorage overrides) and hands it to these two
- * functions.
+ * `normalizeRows` pass per historical sheet, optionally scoped to the selected
+ * sub-portfolio) and hands it to these two functions.
  *
  * Each snapshot is a fresh full export of the portfolio's state as of that
  * date, and sold rows persist in these exports rather than disappearing after

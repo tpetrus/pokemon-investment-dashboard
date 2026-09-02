@@ -15,21 +15,40 @@ time (`src/lib/loadWorkbooks.js`), normalised in `src/lib/normalize.js`, and ren
 by a single client-side island: `<Dashboard client:load>` in `src/pages/index.astro`.
 There is no build step for data and no database — a page load is a bucket read.
 
+`Dashboard.jsx` applies two app-wide scope filters to `allHoldings` before anything
+else sees the data (every tab, KPI, chart, and the History-tab series): the
+sub-portfolio switch (`Portfolio Name` → `portfolio` field in `normalize.js`; All /
+Cards / Sealed, shown only when more than one bucket is present) and an
+"Include no-cost items" checkbox that is **off by default**, so rows with no recorded
+cost (`!(h.totalCost > 0)`) are excluded until it's ticked. The masthead shows an
+"N items with no cost hidden" line while that filter is biting.
+
+Both controls plus the tab strip share one sticky bar (`.toolbar`, full-bleed via a
+negative margin equal to the shell gutter; scope controls in `.toolbar__scope`). A
+`ResizeObserver` in `Dashboard.jsx` publishes its height as `--toolbar-h`; non-capped
+sticky table headers pin at that offset so they sit *below* the bar, not behind it.
+An `IntersectionObserver` on a zero-height sentinel just above the bar toggles
+`data-stuck`, which is what gates the notch inset (`env(safe-area-inset-top)`) and the
+drop shadow — neither shows while the bar is still in normal flow. The bar goes
+`position: static` on short landscape screens.
+
 ```
 src/lib/loadWorkbooks.js   fetch + parse up to MAX_HISTORY_SNAPSHOTS recent objects from R2
-src/lib/normalize.js       synonym-based column mapping, coercion, P/L math, audit
+src/lib/normalize.js       synonym-based column mapping, coercion, P/L math
 src/lib/history.js         pure aggregation of per-snapshot holdings into portfolio/product series
 src/lib/returns.js         pure return math — chained time-weighted return index, XIRR
                             (money-weighted) from one snapshot's dated cash flows, CAGR, drawdown
 src/lib/format.js          every user-visible number goes through here
 src/lib/useMediaQuery.js   JS-side breakpoints, kept in step with global.css
+src/lib/useIncrementalList.js  reveal a long list in chunks on scroll (IntersectionObserver,
+                            no deps); pair with `.table--virtual` (content-visibility) on rows
 src/data/tcgSets.json      one-off snapshot of the Pokémon TCG API's /v2/sets — refresh with
                             `npm run fetch:sets`, never at build or request time
 src/lib/tcgSets.js         slug-based matching from a holding's free-text `set` string to a
                             tcgSets.json entry; unmatched (including 'Unassigned') resolves to null
 src/components/SetIcon.jsx small symbol icon or wide logo image, hotlinked straight from the CDN
                             URL in tcgSets.json; renders nothing if the set doesn't match
-src/components/            Dashboard, Charts, HoldingsTable, ExitCalculator, DataPanel, HistoryPanel, ui
+src/components/            Dashboard, Charts, HoldingsTable, SetsRankedTable, ExitCalculator, HistoryPanel, ui
 src/styles/global.css      the whole design system; there is no CSS-in-JS layer
 ```
 
@@ -37,10 +56,9 @@ The History tab (`HistoryPanel.jsx`) charts portfolio value/cost basis, a time-w
 return index (base 100) with its drawdown-from-peak, and per-product price over time
 from that snapshot history, plus a combined read/skip status table. Time-series charts
 use a real time-scaled x-axis (`timeAxis()` in `Charts.jsx`) — a 6-month gap between
-snapshots is drawn six times wider than a 1-month gap, never equidistant. Only the
-newest snapshot uses the user's saved column-mapping overrides — older snapshots use
-`guessMapping()` only, since a manual override is stored as literal header text that
-may not exist in an older file.
+snapshots is drawn six times wider than a 1-month gap, never equidistant. Every
+snapshot, newest included, is column-mapped by `guessMapping()` alone — there is no
+manual column-mapping UI.
 
 Portfolio return figures come from `src/lib/returns.js`: the time-weighted index is
 chained across snapshots (between-snapshot flows inferred from the change in cost basis
@@ -80,10 +98,22 @@ Overflow belongs to a named scroll container — `.table-scroll`, `.tabs` — ne
 **2. Wide tables scroll inside `.table-scroll` with `.table--sticky` on the table.**
 Under 860px the first column pins to the left so a row never loses the product it
 belongs to. Pair it with a `.table-hint` line, which is `display: none` above 860px.
-For anything past ~6 columns, mark the essential ones as in `HoldingsTable.jsx`
-(`essential: true`) and render `compact ? COLUMNS.filter(...) : COLUMNS`; put a "Show
-all columns" toggle next to it so nothing is unreachable. Build table footers from the
-visible column list — never hard-code `colSpan`.
+For anything past ~6 columns, flag the interesting ones as in `HoldingsTable.jsx`
+(`default: true`), render `COLUMNS.filter((c) => shownKeys.has(c.key))`, and give the
+reader a `.colmenu` checklist (the "Columns" button) to add the rest back — the full
+set overflows even a desktop sideways, so the lean default is what avoids a horizontal
+scroll. Build table footers from the visible column list — never hard-code `colSpan`.
+
+Long tables (Positions, Sets ranked) add `.table--virtual` to the table so the browser
+skips layout/paint for off-screen body rows (`content-visibility`, `--vrow` seeds the
+row height), and drive the row list through `useIncrementalList` so the first paint only
+mounts ~80 rows. Their rows scroll *inside* the container, not the page: the wrapping
+`.table-scroll` also takes `.table-scroll--capped` (adds `overflow-y` + a `dvh` max
+height) and carries the hook's `rootRef`, so the sticky `<thead>` pins to the box and
+the reveal tracks that scroll rather than the window's. No windowing library — sticky
+header, sticky first column, `<tfoot>` totals, sort and find-in-page all keep working.
+Put the hook in a component that mounts only with the table (see `SetsRankedTable.jsx`),
+and give the scroll sentinel row `contentVisibility: 'visible'` so it isn't itself skipped.
 
 **3. Recharts sizes in pixels, so charts take the breakpoint as an argument.** Import
 `useIsNarrow` from `src/lib/useMediaQuery.js` and shrink `height`, `margin`, and
@@ -173,7 +203,8 @@ migration is the likely cause and the fetch URL/schema will need revisiting.
   surface, where low contrast is the usual failure. Body text sits at 13.4:1,
   secondary at 6.6:1, and `--ink-3` is for labels only. Focus rings are solid 3px
   outlines — never a soft shadow, which is invisible in sunlight.
-- User corrections (column mappings, excluded sheets, active tab) persist to
-  `localStorage` under `pokemon-dashboard-v1`. Bump the key if the shape changes.
+- The active tab, the selected sub-portfolio, and the "include no-cost items"
+  toggle persist to `localStorage` under `pokemon-dashboard-v1`. Bump the key if
+  the shape changes.
 - Preset marketplace fee rates in `ExitCalculator.jsx` are editable on purpose —
   they change, and they depend on seller tier. Don't present them as authoritative.

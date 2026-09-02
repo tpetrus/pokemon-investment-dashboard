@@ -12,8 +12,7 @@
  *  - `xirr` solves the **money-weighted return** from a single snapshot's dated
  *    cash flows (every lot's purchase, every sale, plus today's held value as a
  *    terminal inflow). This one reflects your timing. It is exact only where the
- *    sheet actually carries `purchaseDate` / `soldDate` — the Data-tab audit
- *    already flags the rows that don't.
+ *    sheet actually carries `purchaseDate` / `soldDate`.
  *
  * Pure. No React, no I/O. `Dashboard.jsx` assembles the inputs.
  */

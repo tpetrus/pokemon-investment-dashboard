@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Kpi, Tabs, SpreadRail, Empty } from './ui.jsx';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Card, Kpi, Tabs, Segmented, SpreadRail, Empty } from './ui.jsx';
 import { AllocationDonut, CostVsValueBars, CapitalDeployed, HoldVsReturn, VendorBars } from './Charts.jsx';
 import HoldingsTable from './HoldingsTable.jsx';
+import SetsRankedTable from './SetsRankedTable.jsx';
 import ExitCalculator from './ExitCalculator.jsx';
-import DataPanel from './DataPanel.jsx';
 import HistoryPanel from './HistoryPanel.jsx';
 import SetIcon from './SetIcon.jsx';
-import { guessMapping, normalizeRows, computeMetrics, groupBy, auditRows, herfindahl, snapshotDateFrom } from '../lib/normalize.js';
+import { guessMapping, normalizeRows, computeMetrics, groupBy, herfindahl, snapshotDateFrom } from '../lib/normalize.js';
 import { buildPortfolioSeries, buildProductSeries } from '../lib/history.js';
 import { buildReturnSeries, buildDrawdownSeries, xirr, cashflowsFromHoldings } from '../lib/returns.js';
 import { money, signedMoney, pct, count, plainPct, duration, tone, shortDate } from '../lib/format.js';
@@ -20,13 +20,12 @@ const TABS = [
   { id: 'performance', label: 'Performance' },
   { id: 'positions', label: 'Positions' },
   { id: 'exit', label: 'Exit math' },
-  { id: 'data', label: 'Data' },
 ];
 
-export default function Dashboard({ initialSheets = [], dir = '', loadError = null, snapshots = [], skipped = [] }) {
+export default function Dashboard({ initialSheets = [], loadError = null, snapshots = [], skipped = [] }) {
   const [tab, setTab] = useState('overview');
-  const [enabled, setEnabled] = useState({});
-  const [overrides, setOverrides] = useState({});
+  const [portfolio, setPortfolio] = useState('all');
+  const [showUncosted, setShowUncosted] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const sheets = initialSheets;
@@ -34,35 +33,94 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-      if (saved.enabled) setEnabled(saved.enabled);
-      if (saved.overrides) setOverrides(saved.overrides);
-      if (saved.tab) setTab(saved.tab);
+      if (saved.tab && TABS.some((t) => t.id === saved.tab)) setTab(saved.tab);
+      if (saved.portfolio) setPortfolio(saved.portfolio);
+      if (typeof saved.showUncosted === 'boolean') setShowUncosted(saved.showUncosted);
     } catch { /* first run */ }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(STORE_KEY, JSON.stringify({ enabled, overrides, tab }));
-  }, [enabled, overrides, tab, hydrated]);
+    localStorage.setItem(STORE_KEY, JSON.stringify({ tab, portfolio, showUncosted }));
+  }, [tab, portfolio, showUncosted, hydrated]);
+
+  // Publish the sticky toolbar's height so non-capped sticky table headers can
+  // pin *below* it rather than behind it. Height shifts with the breakpoint and
+  // with whether the portfolio row is present, so track it live.
+  const toolbarRef = useRef(null);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const apply = () => root.style.setProperty('--toolbar-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.removeProperty('--toolbar-h'); };
+  }, [sheets.length]);
+
+  // "Is the toolbar stuck?" via a zero-height sentinel just above it — no scroll
+  // handler. Drives `data-stuck`, which gates the notch inset + drop shadow so
+  // neither shows while the bar is still in normal flow.
+  const sentinelRef = useRef(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting), { threshold: [0] });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [sheets.length]);
 
   const mappings = useMemo(() => {
     const out = {};
     for (const s of sheets) {
       if (s.readError) continue;
-      out[s.id] = { ...guessMapping(s.headers, s.rows), ...(overrides[s.id] || {}) };
+      out[s.id] = guessMapping(s.headers, s.rows);
     }
     return out;
-  }, [sheets, overrides]);
+  }, [sheets]);
 
-  const holdings = useMemo(() => {
+  const allHoldings = useMemo(() => {
     const rows = [];
     for (const s of sheets) {
-      if (s.readError || enabled[s.id] === false) continue;
+      if (s.readError) continue;
       rows.push(...normalizeRows(s.rows, mappings[s.id] || {}, s.sheet || s.file));
     }
     return rows;
-  }, [sheets, mappings, enabled]);
+  }, [sheets, mappings]);
+
+  // The exports now carry a "Portfolio Name" column (Cards vs. Sealed). Offer a
+  // switch only when more than one bucket actually shows up in the data.
+  const portfolios = useMemo(() => {
+    const seen = new Set();
+    for (const h of allHoldings) if (h.portfolio) seen.add(h.portfolio);
+    return [...seen].sort();
+  }, [allHoldings]);
+
+  // `portfolio` persists from localStorage and may name a bucket that isn't in
+  // the current data — fall back to the unfiltered book when so.
+  const activePortfolio = portfolios.includes(portfolio) ? portfolio : null;
+
+  // App-wide scope: the sub-portfolio switch, plus (off by default) whether rows
+  // with no recorded cost are in play at all. Both feed every tab and the
+  // History-tab series, so a row that survives here is a row the whole app sees.
+  const holdings = useMemo(
+    () => allHoldings.filter((h) => {
+      if (activePortfolio && h.portfolio !== activePortfolio) return false;
+      if (!showUncosted && !(h.totalCost > 0)) return false;
+      return true;
+    }),
+    [allHoldings, activePortfolio, showUncosted],
+  );
+
+  // How many rows the "no cost" toggle is currently hiding (within the active
+  // portfolio) — surfaced in the masthead so the filter is never invisible.
+  const hiddenNoCost = useMemo(
+    () => (showUncosted ? 0 : allHoldings.filter((h) => (!activePortfolio || h.portfolio === activePortfolio) && !(h.totalCost > 0)).length),
+    [allHoldings, activePortfolio, showUncosted],
+  );
 
   // Collectr and PriceCharting exports stamp the pull date into the value column
   // header. Surfacing it keeps a stale snapshot from reading as today's market.
@@ -76,21 +134,33 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
 
   const snapshotAge = snapshot ? Math.round((Date.now() - Date.parse(`${snapshot}T12:00:00`)) / 86400000) : null;
 
-  // Per snapshot: the newest one reuses the exact `holdings` above (guessMapping
-  // merged with the user's saved overrides, respecting excluded sheets). Every
-  // older snapshot gets guessMapping() only — a manual override is stored as
-  // literal header text (e.g. an embedded "as of" date) and cannot replay onto a
-  // different file whose equivalent column is named something else.
-  const dailyHoldings = useMemo(() => {
-    return snapshots.map((snap, i) => {
-      if (i === snapshots.length - 1) return { date: snap.date, holdings };
+  // Normalize every older snapshot once — guessMapping() only, since a saved
+  // override is literal header text that may not exist in an older file. Keyed on
+  // `snapshots` alone, so toggling a scope control below never re-parses these.
+  const olderSnapshots = useMemo(() => {
+    return snapshots.slice(0, -1).map((snap) => {
       const rows = [];
       for (const s of snap.sheets) {
         rows.push(...normalizeRows(s.rows, guessMapping(s.headers, s.rows), s.sheet || s.file));
       }
-      return { date: snap.date, holdings: rows };
+      return { date: snap.date, rows };
     });
-  }, [snapshots, holdings]);
+  }, [snapshots]);
+
+  // Apply the app-wide scope to each snapshot: the newest one reuses the already-
+  // scoped `holdings`; the rest are just a cheap filter over the rows above.
+  const dailyHoldings = useMemo(() => {
+    if (!snapshots.length) return [];
+    const inScope = (h) => {
+      if (activePortfolio && h.portfolio !== activePortfolio) return false;
+      if (!showUncosted && !(h.totalCost > 0)) return false;
+      return true;
+    };
+    return [
+      ...olderSnapshots.map((s) => ({ date: s.date, holdings: s.rows.filter(inScope) })),
+      { date: snapshots.at(-1).date, holdings },
+    ];
+  }, [olderSnapshots, snapshots, holdings, activePortfolio, showUncosted]);
 
   const portfolioSeries = useMemo(() => buildPortfolioSeries(dailyHoldings), [dailyHoldings]);
   const productSeries = useMemo(() => buildProductSeries(dailyHoldings), [dailyHoldings]);
@@ -113,7 +183,6 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
   }, [snapshots, skipped]);
 
   const m = useMemo(() => computeMetrics(holdings), [holdings]);
-  const audit = useMemo(() => auditRows(holdings), [holdings]);
 
   const bySet = useMemo(() => groupBy(m.held, 'set'), [m.held]);
   const byType = useMemo(() => groupBy(m.held, 'productType'), [m.held]);
@@ -165,25 +234,23 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
   }, [gainers, m.ranked]);
 
   const hasData = holdings.length > 0;
-  const readable = sheets.filter((s) => !s.readError).length;
-
-  const toggleSheet = (id) => setEnabled((e) => ({ ...e, [id]: e[id] === false }));
-  const setMap = (sheetId, field, header) =>
-    setOverrides((o) => ({ ...o, [sheetId]: { ...(o[sheetId] || {}), [field]: header } }));
-  const resetMaps = () => setOverrides({});
 
   return (
     <>
       <header className="masthead">
         <div>
-          <p className="eyebrow" style={{ margin: '0 0 10px' }}>Sealed portfolio</p>
+          <p className="eyebrow" style={{ margin: '0 0 10px' }}>
+            {portfolios.length > 1
+              ? (activePortfolio ? `${activePortfolio} portfolio` : 'Full portfolio')
+              : 'Sealed portfolio'}
+          </p>
           <h1>Pokémon investments</h1>
         </div>
         <div className="masthead__meta">
           <div>{count(m.positions)} open positions · {count(m.units)} units</div>
-          <div>
-            {count(readable)} {readable === 1 ? 'sheet' : 'sheets'} from {dir || 'your uploads'}
-          </div>
+          {hiddenNoCost > 0 && (
+            <div>{count(hiddenNoCost)} {hiddenNoCost === 1 ? 'item' : 'items'} with no cost hidden</div>
+          )}
           {snapshot && (
             <div style={{ color: snapshotAge > 60 ? 'var(--warn)' : undefined }}>
               Prices as of {shortDate(snapshot)}{snapshotAge > 60 ? ` · ${count(snapshotAge)} days old` : ''}
@@ -207,16 +274,40 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
 
       {sheets.length > 0 && (
         <>
-          <Tabs tabs={TABS} active={tab} onChange={setTab} />
+          <div ref={sentinelRef} aria-hidden="true" style={{ height: 0 }} />
+          <div className="toolbar" ref={toolbarRef} data-stuck={stuck || undefined}>
+            <div className="toolbar__scope">
+              {portfolios.length > 1 && (
+                <Segmented
+                  label="Portfolio"
+                  value={activePortfolio ?? 'all'}
+                  onChange={setPortfolio}
+                  options={[
+                    { value: 'all', label: 'All' },
+                    ...portfolios.map((p) => ({ value: p, label: p })),
+                  ]}
+                />
+              )}
+              <label className="toolbar__check">
+                <input
+                  type="checkbox"
+                  checked={showUncosted}
+                  onChange={(e) => setShowUncosted(e.target.checked)}
+                />
+                <span>Include no-cost items</span>
+              </label>
+            </div>
+            <Tabs tabs={TABS} active={tab} onChange={setTab} />
+          </div>
 
-          {/* Every sheet excluded, or nothing mapped yet — every tab but Data and
-              History depends on holdings, so send the user back there rather than
-              showing them nothing with no way out. History has its own gate below
-              since it depends on snapshot count, not the current sheet's mapping. */}
-          {!hasData && tab !== 'data' && tab !== 'history' && (
+          {/* Nothing in scope — every tab but History reads `holdings`, so say
+              why rather than showing a blank. History has its own gate below
+              since it depends on snapshot count, not this. */}
+          {!hasData && tab !== 'history' && (
             <Empty title="Nothing to show">
-              Every sheet is excluded, or no rows have a cost or value mapped yet.
-              Head to the Data tab to include a sheet or fix its column mapping.
+              {hiddenNoCost > 0
+                ? 'Every position in scope has no recorded cost. Tick "Include no-cost items" in the bar above to see them.'
+                : 'No rows have a cost or value to work with yet — check the source spreadsheet in R2.'}
             </Empty>
           )}
 
@@ -309,7 +400,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
                   {gainers.length ? (
                     <SpreadRail items={topByValue.filter((h) => h.roi != null).slice(0, 9)} domain={railDomain} />
                   ) : (
-                    <Empty title="No returns to plot">Map a market value column in the Data tab and these fill in.</Empty>
+                    <Empty title="No returns to plot">Add a market value column to the source sheet and these fill in.</Empty>
                   )}
                 </Card>
 
@@ -397,41 +488,7 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
               </div>
               <Card title="Sets ranked" note="Held positions only">
                 <p className="table-hint" style={{ marginBottom: 12 }}>Swipe sideways for the rest of the columns.</p>
-                <div className="table-scroll">
-                  <table className="table--sticky">
-                    <thead>
-                      <tr>
-                        <th>Set</th>
-                        <th className="th-right">Positions</th>
-                        <th className="th-right">Units</th>
-                        <th className="th-right">Cost basis</th>
-                        <th className="th-right">Market value</th>
-                        <th className="th-right">Unrealized</th>
-                        <th className="th-right">Return</th>
-                        <th className="th-right">Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bySet.map((g) => (
-                        <tr key={g.key}>
-                          <td style={{ fontWeight: 600 }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              <SetIcon set={g.key} size={18} />
-                              <span style={{ minWidth: 0 }}>{g.key}</span>
-                            </span>
-                          </td>
-                          <td className="td-right num">{count(g.count)}</td>
-                          <td className="td-right num">{count(g.units)}</td>
-                          <td className="td-right num">{money(g.cost)}</td>
-                          <td className="td-right num">{money(g.value)}</td>
-                          <td className={`td-right num ${tone(g.gain)}`}>{signedMoney(g.gain)}</td>
-                          <td className={`td-right num ${tone(g.roi)}`}>{pct(g.roi)}</td>
-                          <td className="td-right num">{m.valueHeld ? plainPct(g.value / m.valueHeld, 1) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SetsRankedTable data={bySet} valueHeld={m.valueHeld} />
               </Card>
             </div>
           )}
@@ -499,24 +556,15 @@ export default function Dashboard({ initialSheets = [], dir = '', loadError = nu
           )}
 
           {hasData && tab === 'positions' && (
-            <Card title="Every position" note={`${count(holdings.length)} rows loaded`}>
+            <Card
+              title="Every position"
+              note={`${count(m.held.length)} held${m.sold.length ? ` · ${count(m.sold.length)} sold` : ''}`}
+            >
               <HoldingsTable holdings={holdings} />
             </Card>
           )}
 
           {hasData && tab === 'exit' && <ExitCalculator holdings={holdings} />}
-
-          {tab === 'data' && (
-            <DataPanel
-              sheets={sheets}
-              enabled={enabled}
-              onToggleSheet={toggleSheet}
-              mappings={mappings}
-              onMap={setMap}
-              audit={audit}
-              onReset={resetMaps}
-            />
-          )}
         </>
       )}
     </>

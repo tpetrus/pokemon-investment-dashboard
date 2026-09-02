@@ -1,28 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { money, pct, count, shortDate, duration, tone } from '../lib/format.js';
-import { useIsTablet } from '../lib/useMediaQuery.js';
+import { useIncrementalList } from '../lib/useIncrementalList.js';
 import SetIcon from './SetIcon.jsx';
 
 /**
- * `essential` marks the columns that survive on a phone. Twelve columns in a
- * 360px viewport means either a horizontal scroll long enough to lose your place
- * or type too small to read, so narrow screens get the six that answer "what do
- * I own, what did it cost, what is it worth now" and a toggle for the rest.
+ * `default: true` marks the columns shown before the reader opens the column
+ * picker — the ones that answer "what do I own, what did it cost, what's it worth
+ * now, how's it doing". The rest (per-unit prices, dates, annualised return, the
+ * portfolio bucket) are a checkbox away in the Columns menu. All thirteen at once
+ * overflow even a desktop sideways, hence a lean default. `name` is always on:
+ * it is the row's identity and the pinned first column on a phone.
  */
 const COLUMNS = [
-  { key: 'name', label: 'Product', align: 'left', essential: true },
-  { key: 'set', label: 'Set', align: 'left' },
-  { key: 'qty', label: 'Qty', align: 'right', fmt: count, essential: true },
+  { key: 'name', label: 'Product', align: 'left', default: true },
+  { key: 'set', label: 'Set', align: 'left', default: true },
+  { key: 'portfolio', label: 'Portfolio', align: 'left', fmt: (v) => v || '—' },
+  { key: 'qty', label: 'Qty', align: 'right', fmt: count, default: true },
   { key: 'unitCost', label: 'Cost / unit', align: 'right', fmt: (v) => money(v, true) },
-  { key: 'totalCost', label: 'Cost basis', align: 'right', fmt: (v) => money(v), essential: true },
+  { key: 'totalCost', label: 'Cost basis', align: 'right', fmt: (v) => money(v), default: true },
   { key: 'unitValue', label: 'Market / unit', align: 'right', fmt: (v) => money(v, true) },
-  { key: 'totalValue', label: 'Market value', align: 'right', fmt: (v) => money(v), essential: true },
-  { key: 'gain', label: 'Unrealized', align: 'right', fmt: (v) => money(v), toned: true, essential: true },
-  { key: 'roi', label: 'Return', align: 'right', fmt: (v) => pct(v), toned: true, essential: true },
+  { key: 'totalValue', label: 'Market value', align: 'right', fmt: (v) => money(v), default: true },
+  { key: 'gain', label: 'Unrealized', align: 'right', fmt: (v) => money(v), toned: true, default: true },
+  { key: 'roi', label: 'Return', align: 'right', fmt: (v) => pct(v), toned: true, default: true },
   { key: 'annualized', label: 'Annualized', align: 'right', fmt: (v) => pct(v), toned: true },
   { key: 'heldDays', label: 'Held', align: 'right', fmt: duration },
   { key: 'purchaseDate', label: 'Bought', align: 'right', fmt: shortDate },
 ];
+
+const DEFAULT_KEYS = COLUMNS.filter((c) => c.default).map((c) => c.key);
 
 export default function HoldingsTable({ holdings }) {
   const [sort, setSort] = useState({ key: 'totalValue', dir: 'desc' });
@@ -30,10 +35,22 @@ export default function HoldingsTable({ holdings }) {
   const [setFilter, setSetFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('held');
-  const [allColumns, setAllColumns] = useState(false);
+  const [shownKeys, setShownKeys] = useState(() => new Set(DEFAULT_KEYS));
+  const [colMenu, setColMenu] = useState(false);
 
-  const compact = useIsTablet() && !allColumns;
-  const columns = compact ? COLUMNS.filter((c) => c.essential) : COLUMNS;
+  const columns = COLUMNS.filter((c) => shownKeys.has(c.key));
+  const setHidden = !shownKeys.has('set');
+
+  const toggleColumn = (key) => {
+    if (key === 'name') return; // identity column, always shown
+    setShownKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const resetColumns = () => setShownKeys(new Set(DEFAULT_KEYS));
 
   const sets = useMemo(() => [...new Set(holdings.map((h) => h.set))].sort(), [holdings]);
   const types = useMemo(() => [...new Set(holdings.map((h) => h.productType))].sort(), [holdings]);
@@ -59,12 +76,16 @@ export default function HoldingsTable({ holdings }) {
     });
   }, [holdings, sort, query, setFilter, typeFilter, statusFilter]);
 
+  // Render the result set a chunk at a time; totals below still sum every row.
+  const { limit, rootRef, sentinelRef, done } = useIncrementalList(rows.length);
+  const visibleRows = rows.slice(0, limit);
+
   const totals = rows.reduce((a, r) => ({ cost: a.cost + (r.totalCost || 0), value: a.value + (r.totalValue || 0), qty: a.qty + (r.qty || 0) }), { cost: 0, value: 0, qty: 0 });
   const totalRoi = totals.cost > 0 ? (totals.value - totals.cost) / totals.cost : null;
 
   // Keyed by column so the footer follows whichever columns are on screen.
   const footer = {
-    name: { text: `${rows.length} rows shown`, cls: '' },
+    name: { text: done ? `${rows.length} rows shown` : `${visibleRows.length} of ${rows.length} rows`, cls: '' },
     qty: { text: count(totals.qty), cls: 'td-right num' },
     totalCost: { text: money(totals.cost), cls: 'td-right num' },
     totalValue: { text: money(totals.value), cls: 'td-right num' },
@@ -74,8 +95,8 @@ export default function HoldingsTable({ holdings }) {
 
   const toggle = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
 
-  // Export is always the full column set — hiding columns is a screen-size
-  // concession, not a change to the data.
+  // Export is always the full column set — the column picker is a viewing
+  // preference, not a change to the data.
   const exportCsv = () => {
     const head = COLUMNS.map((c) => c.label).join(',');
     const body = rows
@@ -136,15 +157,43 @@ export default function HoldingsTable({ holdings }) {
         <button className="btn btn--sm" onClick={exportCsv}>Export CSV</button>
       </div>
 
-      <div className="table-hint">
-        <span>Swipe the table sideways — the product column stays put.</span>
-        <button className="btn btn--sm" aria-pressed={allColumns} onClick={() => setAllColumns((v) => !v)}>
-          {allColumns ? `Showing all ${COLUMNS.length} columns` : 'Show all columns'}
+      <div className="colbar">
+        <button
+          type="button"
+          className="btn btn--sm"
+          aria-expanded={colMenu}
+          aria-controls="tbl-colmenu"
+          onClick={() => setColMenu((v) => !v)}
+        >
+          Columns · {columns.length}/{COLUMNS.length}
         </button>
+        {colMenu && (
+          <fieldset id="tbl-colmenu" className="colmenu">
+            <legend className="sr-only">Columns to show</legend>
+            {COLUMNS.map((c) => (
+              <label key={c.key} className="colmenu__opt">
+                <input
+                  type="checkbox"
+                  checked={shownKeys.has(c.key)}
+                  disabled={c.key === 'name'}
+                  onChange={() => toggleColumn(c.key)}
+                />
+                <span>{c.label}</span>
+              </label>
+            ))}
+            <button type="button" className="btn btn--sm colmenu__reset" onClick={resetColumns}>
+              Reset
+            </button>
+          </fieldset>
+        )}
       </div>
 
-      <div className="table-scroll">
-        <table className="table--sticky">
+      <div className="table-hint">
+        <span>Swipe the table sideways — the product column stays put.</span>
+      </div>
+
+      <div className="table-scroll table-scroll--capped" ref={rootRef}>
+        <table className="table--sticky table--virtual" style={{ '--vrow': '72px' }}>
           <caption className="sr-only">Positions, sortable by any column</caption>
           <thead>
             <tr>
@@ -161,7 +210,7 @@ export default function HoldingsTable({ holdings }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {visibleRows.map((r) => (
               <tr key={r.id}>
                 {columns.map((c) => {
                   const v = r[c.key];
@@ -176,11 +225,11 @@ export default function HoldingsTable({ holdings }) {
                       ) : (
                         c.fmt ? c.fmt(v) : v
                       )}
-                      {/* In compact mode the set column is gone, so it joins the
-                          subtitle rather than disappearing from the row. */}
-                      {c.key === 'name' && (r.productType !== 'Unassigned' || r.vendor || compact) && (
+                      {/* When the Set column is hidden it joins this subtitle
+                          rather than disappearing from the row. */}
+                      {c.key === 'name' && (r.productType !== 'Unassigned' || r.vendor || setHidden) && (
                         <span className="cell-sub">
-                          {compact && r.set !== 'Unassigned' && (
+                          {setHidden && r.set !== 'Unassigned' && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                               <SetIcon set={r.set} size={16} />
                               <span style={{ minWidth: 0 }}>
@@ -188,7 +237,7 @@ export default function HoldingsTable({ holdings }) {
                               </span>
                             </span>
                           )}
-                          {!(compact && r.set !== 'Unassigned') &&
+                          {!(setHidden && r.set !== 'Unassigned') &&
                             [r.productType !== 'Unassigned' ? r.productType : null, r.vendor].filter(Boolean).join(' · ')}
                         </span>
                       )}
@@ -201,6 +250,11 @@ export default function HoldingsTable({ holdings }) {
               <tr><td colSpan={columns.length} style={{ textAlign: 'center', color: 'var(--ink-2)', padding: 34 }}>
                 No positions match these filters. Clear the search or switch status to Everything.
               </td></tr>
+            )}
+            {!done && (
+              <tr ref={sentinelRef} aria-hidden="true" style={{ contentVisibility: 'visible' }}>
+                <td colSpan={columns.length} style={{ padding: 0, border: 0, height: 1 }} />
+              </tr>
             )}
           </tbody>
           {rows.length > 0 && (

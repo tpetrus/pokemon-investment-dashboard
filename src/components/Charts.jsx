@@ -42,20 +42,34 @@ const tickDate = (t, long) => {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+/** A few evenly-spaced timestamps across the data's span. Passed to the axis as
+    an explicit `ticks` list so Recharts can't fall back to one label per data
+    point on a dense series (Capital deployed has a point per dated buy). */
+const spacedTimeTicks = (ts, n) => {
+  if (ts.length < 2 || n < 2) return null;
+  const min = Math.min(...ts);
+  const max = Math.max(...ts);
+  if (!(max > min)) return null;
+  return Array.from({ length: n }, (_, i) => Math.round(min + ((max - min) * i) / (n - 1)));
+};
+
 /** Shared X-axis props for a time series. `long` (month + year ticks) kicks in
     past ~7 months of span, and always on a phone where "Feb 12" won't fit. */
 const timeAxis = (narrow, rows) => {
   const ts = rows.map((r) => r.t).filter(Number.isFinite);
   const spanDays = ts.length > 1 ? (Math.max(...ts) - Math.min(...ts)) / 86400000 : 0;
   const long = narrow || spanDays > 210;
+  const count = narrow ? 4 : 6;
+  const ticks = spacedTimeTicks(ts, count);
   return {
     dataKey: 't',
     type: 'number',
     scale: 'time',
     domain: ['dataMin', 'dataMax'],
     tickFormatter: (t) => tickDate(t, long),
-    tickCount: narrow ? 4 : 6,
     minTickGap: narrow ? 24 : 20,
+    interval: 'preserveStartEnd',
+    ...(ticks ? { ticks } : { tickCount: count }),
     ...axisFor(narrow),
   };
 };

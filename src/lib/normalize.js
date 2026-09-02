@@ -9,6 +9,7 @@
 export const FIELDS = [
   { key: 'name', label: 'Product', required: true, kind: 'text' },
   { key: 'set', label: 'Set / expansion', kind: 'text' },
+  { key: 'portfolio', label: 'Portfolio', kind: 'text', hint: 'A column that buckets rows into sub-portfolios (e.g. Cards vs. Sealed)' },
   { key: 'productType', label: 'Product type', kind: 'text', hint: 'Left empty, the format is read from the product name' },
   { key: 'qty', label: 'Quantity', kind: 'number' },
   { key: 'unitCost', label: 'Cost per unit', kind: 'money' },
@@ -29,6 +30,7 @@ export const FIELDS = [
 const SYNONYMS = {
   name: ['productname', 'itemname', 'cardname', 'product', 'item', 'name', 'description', 'title', 'card', 'listing'],
   set: ['set', 'expansion', 'series', 'setname', 'era'],
+  portfolio: ['portfolio', 'portfolioname', 'subportfolio', 'portfoliogroup'],
   productType: ['type', 'producttype', 'category', 'format', 'sealedtype', 'itemtype'],
   qty: ['qty', 'quantity', 'count', 'units', 'amount', 'numowned', 'owned', 'quantityowned'],
   unitCost: ['costperunit', 'unitcost', 'pricepaid', 'purchaseprice', 'buyprice', 'costeach', 'paid', 'costbasisperunit', 'perunitcost', 'cost'],
@@ -228,6 +230,7 @@ export function normalizeRows(rows, mapping, sourceLabel = '') {
       source: sourceLabel,
       name: name || '(unnamed row)',
       set: String(get('set') ?? '').trim() || 'Unassigned',
+      portfolio: String(get('portfolio') ?? '').trim() || null,
       productType: (typeUsable ? String(get('productType') ?? '').trim() : '') || inferProductType(name),
       vendor: String(get('vendor') ?? '').trim() || null,
       storage: String(get('storage') ?? '').trim() || null,
@@ -337,17 +340,4 @@ export function herfindahl(values) {
   if (!(total > 0)) return null;
   const hhi = values.reduce((a, v) => (v > 0 ? a + (v / total) ** 2 : a), 0);
   return { hhi, effectiveN: hhi > 0 ? 1 / hhi : null };
-}
-
-/** Data-quality checks, so silent gaps in the sheet do not become silently wrong numbers. */
-export function auditRows(holdings) {
-  const issues = [];
-  const push = (label, rows) => rows.length && issues.push({ label, count: rows.length, rows: rows.slice(0, 8) });
-
-  push('No cost recorded', holdings.filter((h) => !h.totalCost));
-  push('No market value recorded', holdings.filter((h) => h.status === 'held' && !h.totalValue));
-  push('No purchase date', holdings.filter((h) => !h.purchaseDate));
-  push('No set assigned', holdings.filter((h) => h.set === 'Unassigned'));
-  push('Value more than 10x cost — check for a typo', holdings.filter((h) => h.totalCost > 0 && h.totalValue / h.totalCost > 10));
-  return issues;
 }

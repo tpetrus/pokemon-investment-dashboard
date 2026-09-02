@@ -25,9 +25,9 @@ function Stat({ label, value, foot, info }) {
 }
 
 /**
- * Parallel in structure to DataPanel.jsx: a Card per concern, the same
- * .table-scroll/.table--sticky table pattern for the status list, and a plain
- * <select> for the product picker (not a new autocomplete dependency).
+ * A Card per concern, the same .table-scroll/.table--sticky table pattern for the
+ * status list, and a plain <select> for the product picker (not a new
+ * autocomplete dependency).
  */
 export default function HistoryPanel({ portfolioSeries, productSeries, returnSeries = [], drawdownSeries = [], snapshots, skipped }) {
   const [productKey, setProductKey] = useState(productSeries[0]?.key ?? '');
